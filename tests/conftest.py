@@ -1,4 +1,4 @@
-"""Shared fixtures for the mcpwarden test suite."""
+"""Shared fixtures for the Bastion test suite."""
 
 import sys
 from pathlib import Path

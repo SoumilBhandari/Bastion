@@ -1,4 +1,4 @@
-"""A minimal MCP server used as a test upstream for the mcpwarden gateway.
+"""A minimal MCP server used as a test upstream for the Bastion gateway.
 
 Run as a stdio server (default) or over HTTP:
 
