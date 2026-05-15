@@ -5,12 +5,12 @@ from typing import Any
 
 from fastmcp import Client
 
-from mcpwarden.config.schema import WardenConfig
-from mcpwarden.gateway import build_gateway
+from bastion.config.schema import BastionConfig
+from bastion.gateway import build_gateway
 
 
-def _config(upstreams: dict[str, dict[str, Any]]) -> WardenConfig:
-    return WardenConfig.model_validate({"upstreams": upstreams})
+def _config(upstreams: dict[str, dict[str, Any]]) -> BastionConfig:
+    return BastionConfig.model_validate({"upstreams": upstreams})
 
 
 async def test_gateway_lists_upstream_tools(sample_upstream: Path, python_exe: str) -> None:

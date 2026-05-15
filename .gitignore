@@ -19,10 +19,10 @@ env/
 .coverage
 htmlcov/
 
-# mcpwarden runtime artifacts
-mcpwarden-audit.jsonl
+# Bastion runtime artifacts
+bastion-audit.jsonl
 *-audit.jsonl
-.mcpwarden-state.json
+.bastion-state.json
 
 # IDE / OS
 .idea/

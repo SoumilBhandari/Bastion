@@ -1,0 +1,12 @@
+# Minimal Bastion configuration: proxy a single upstream MCP server.
+#
+# Run the gateway with:
+#   bastion run --config examples/minimal/bastion.yaml
+#
+# Then point your agent at the `bastion` command instead of at the
+# filesystem server directly.
+
+upstreams:
+  files:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]

@@ -1,4 +1,4 @@
-"""Pydantic models describing the mcpwarden configuration file."""
+"""Pydantic models describing the Bastion configuration file."""
 
 from __future__ import annotations
 
@@ -62,8 +62,8 @@ class GatewaySettings(BaseModel):
     port: int = Field(default=8765, ge=1, le=65535)
 
 
-class WardenConfig(BaseModel):
-    """The top-level mcpwarden configuration."""
+class BastionConfig(BaseModel):
+    """The top-level Bastion configuration."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -71,7 +71,7 @@ class WardenConfig(BaseModel):
     upstreams: dict[str, Upstream] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _validate_upstream_names(self) -> WardenConfig:
+    def _validate_upstream_names(self) -> BastionConfig:
         for name in self.upstreams:
             if not UPSTREAM_NAME_PATTERN.match(name):
                 raise ValueError(

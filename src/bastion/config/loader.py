@@ -1,4 +1,4 @@
-"""Locating, reading, and validating the mcpwarden configuration file."""
+"""Locating, reading, and validating the Bastion configuration file."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from mcpwarden.config.schema import WardenConfig
+from bastion.config.schema import BastionConfig
 
-DEFAULT_CONFIG_NAME = "mcpwarden.yaml"
-CONFIG_ENV_VAR = "MCPWARDEN_CONFIG"
+DEFAULT_CONFIG_NAME = "bastion.yaml"
+CONFIG_ENV_VAR = "BASTION_CONFIG"
 
 
 class ConfigError(Exception):
@@ -21,8 +21,8 @@ class ConfigError(Exception):
 def find_config(explicit: Path | None = None) -> Path:
     """Locate the config file.
 
-    Resolution order: an explicit ``--config`` path, then ``$MCPWARDEN_CONFIG``,
-    then ``./mcpwarden.yaml``. Raises :class:`ConfigError` if the chosen source
+    Resolution order: an explicit ``--config`` path, then ``$BASTION_CONFIG``,
+    then ``./bastion.yaml``. Raises :class:`ConfigError` if the chosen source
     points at a file that does not exist.
     """
     if explicit is not None:
@@ -43,7 +43,7 @@ def find_config(explicit: Path | None = None) -> Path:
     raise ConfigError(f"no config file found at {default}. Create one, or pass --config <path>.")
 
 
-def load_config(path: Path) -> WardenConfig:
+def load_config(path: Path) -> BastionConfig:
     """Read and validate the config file at ``path``."""
     try:
         text = path.read_text(encoding="utf-8")
@@ -64,7 +64,7 @@ def load_config(path: Path) -> WardenConfig:
         )
 
     try:
-        return WardenConfig.model_validate(raw)
+        return BastionConfig.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(_format_validation_error(path, exc)) from exc
 

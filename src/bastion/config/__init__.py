@@ -1,22 +1,22 @@
-"""Configuration loading and validation for mcpwarden."""
+"""Configuration loading and validation for Bastion."""
 
-from mcpwarden.config.loader import (
+from bastion.config.loader import (
     CONFIG_ENV_VAR,
     DEFAULT_CONFIG_NAME,
     ConfigError,
     find_config,
     load_config,
 )
-from mcpwarden.config.schema import GatewaySettings, Transport, Upstream, WardenConfig
+from bastion.config.schema import BastionConfig, GatewaySettings, Transport, Upstream
 
 __all__ = [
     "CONFIG_ENV_VAR",
     "DEFAULT_CONFIG_NAME",
+    "BastionConfig",
     "ConfigError",
     "GatewaySettings",
     "Transport",
     "Upstream",
-    "WardenConfig",
     "find_config",
     "load_config",
 ]
