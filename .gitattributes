@@ -1,0 +1,3 @@
+# Normalize all text files to LF in the repository and on checkout,
+# so line endings stay consistent across Linux, macOS, and Windows.
+* text=auto eol=lf
