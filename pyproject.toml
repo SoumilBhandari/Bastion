@@ -36,6 +36,8 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "jsonpath-ng>=1.6",
+    "starlette>=0.40",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]

@@ -7,6 +7,7 @@ import typer
 
 from bastion import __version__
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
+from bastion.dashboard import run_dashboard
 from bastion.gateway import build_gateway
 
 app = typer.Typer(
@@ -41,6 +42,19 @@ def run(config: ConfigOption = None) -> None:
         gateway.run(transport="http", host=settings.host, port=settings.port, show_banner=False)
     else:
         gateway.run(transport="stdio", show_banner=False)
+
+
+@app.command()
+def dashboard(
+    config: ConfigOption = None,
+    host: Annotated[str, typer.Option(help="Host to bind the dashboard to.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to serve the dashboard on.")] = 8787,
+) -> None:
+    """Serve a local web dashboard that visualizes the audit log."""
+    cfg = _load(config)
+    typer.echo(f"Bastion dashboard -> http://{host}:{port}")
+    typer.echo(f"(reading audit log: {cfg.audit.path})")
+    run_dashboard(cfg, host=host, port=port)
 
 
 @app.command()

@@ -25,6 +25,7 @@ bastion-audit.jsonl
 .bastion-state.json
 
 # IDE / OS
+.claude/
 .idea/
 .vscode/
 .DS_Store

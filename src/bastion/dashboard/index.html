@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>Bastion &mdash; audit log</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #e3b341;
+    --ok: #3fb950; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 18px 28px; border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: .3px; }
+  header h1 .accent { color: var(--accent); }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header .live {
+    margin-left: auto; color: var(--muted); font-size: 12px;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(63,185,80,.5); }
+    70% { box-shadow: 0 0 0 7px rgba(63,185,80,0); }
+    100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+  }
+  .stats { display: flex; gap: 14px; padding: 22px 28px; flex-wrap: wrap; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 22px; min-width: 132px;
+  }
+  .stat .num { font-size: 26px; font-weight: 600; line-height: 1.1; }
+  .stat .num .unit { font-size: 13px; color: var(--muted); font-weight: 400; }
+  .stat .label {
+    color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .7px; margin-top: 4px;
+  }
+  .stat.ok .num { color: var(--ok); }
+  .stat.err .num { color: var(--err); }
+  .wrap { padding: 6px 28px 48px; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .7px; font-weight: 600;
+    padding: 9px 12px; border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 11px 12px; border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:hover td { background: var(--panel); }
+  .mono {
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    font-size: 13px;
+  }
+  .tool { color: var(--accent); font-weight: 600; }
+  .args {
+    color: var(--muted); max-width: 440px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .badge {
+    display: inline-block; padding: 3px 11px; border-radius: 20px;
+    font-size: 12px; font-weight: 600;
+  }
+  .badge.ok { background: rgba(63,185,80,.14); color: var(--ok); }
+  .badge.error { background: rgba(248,81,73,.14); color: var(--err); }
+  .err-msg { color: var(--err); font-size: 12px; margin-top: 5px; }
+  .empty { color: var(--muted); text-align: center; padding: 80px 20px; }
+  .time { color: var(--muted); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>&#128737; <span class="accent">Bastion</span></h1>
+    <span class="sub">audit log dashboard</span>
+    <span class="live"><span class="dot"></span> live</span>
+  </header>
+  <div class="stats" id="stats"></div>
+  <div class="wrap">
+    <table>
+      <thead><tr>
+        <th>Time</th><th>Tool</th><th>Arguments</th><th>Outcome</th><th>Duration</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">
+      No tool calls recorded yet &mdash; point an agent at the Bastion gateway
+      and calls will appear here live.
+    </div>
+  </div>
+<script>
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? iso : d.toLocaleTimeString();
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+  function statCard(num, label, cls, unit) {
+    return `<div class="stat ${cls || ""}"><div class="num">${num}` +
+      (unit ? `<span class="unit"> ${unit}</span>` : "") +
+      `</div><div class="label">${label}</div></div>`;
+  }
+  async function load() {
+    let data;
+    try {
+      data = await (await fetch("/api/audit")).json();
+    } catch (e) {
+      return;
+    }
+    const s = data.summary;
+    document.getElementById("stats").innerHTML =
+      statCard(s.total, "Tool calls") +
+      statCard(s.ok, "Succeeded", "ok") +
+      statCard(s.errors, "Errored", "err") +
+      statCard(s.total_ms.toFixed(0), "Total time", "", "ms");
+    const rows = data.records.map(r => {
+      const args = r.arguments ? JSON.stringify(r.arguments) : "—";
+      const errLine = (r.outcome === "error" && r.error)
+        ? `<div class="err-msg mono">${esc(r.error)}</div>` : "";
+      return `<tr>
+        <td class="mono time">${esc(fmtTime(r.timestamp))}</td>
+        <td class="mono tool">${esc(r.tool)}</td>
+        <td><div class="args mono" title="${esc(args)}">${esc(args)}</div>${errLine}</td>
+        <td><span class="badge ${esc(r.outcome)}">${esc(r.outcome)}</span></td>
+        <td class="mono">${esc(r.duration_ms)} ms</td>
+      </tr>`;
+    }).join("");
+    document.getElementById("rows").innerHTML = rows;
+    document.getElementById("empty").style.display = data.records.length ? "none" : "block";
+  }
+  load();
+  setInterval(load, 1500);
+</script>
+</body>
+</html>

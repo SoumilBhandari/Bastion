@@ -17,3 +17,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Audit logging: every tool call through the gateway is recorded to a JSON
   Lines file. New optional `audit` config section (`enabled`, `path`,
   `log_arguments`).
+- Local web dashboard (`bastion dashboard`): a browser view of the audit log
+  with live tool-call history and summary stats.
