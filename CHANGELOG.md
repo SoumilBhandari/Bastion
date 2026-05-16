@@ -14,3 +14,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Gateway that proxies and aggregates one or more upstream MCP servers over
   stdio and HTTP transports.
 - CLI: `bastion run`, `bastion validate`, `bastion version`.
+- Audit logging: every tool call through the gateway is recorded to a JSON
+  Lines file. New optional `audit` config section (`enabled`, `path`,
+  `log_arguments`).

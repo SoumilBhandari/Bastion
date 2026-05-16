@@ -37,6 +37,12 @@ def write_note(path: str, body: str) -> str:
     return f"wrote {len(body)} bytes to {path}"
 
 
+@mcp.tool
+def boom() -> str:
+    """Always raise an error — used to exercise the gateway's error handling."""
+    raise RuntimeError("boom: this tool always fails")
+
+
 def main() -> None:
     if len(sys.argv) > 2 and sys.argv[1] == "http":
         mcp.run(transport="http", host="127.0.0.1", port=int(sys.argv[2]), show_banner=False)

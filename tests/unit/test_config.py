@@ -127,3 +127,21 @@ def test_find_config_honors_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     config_file.write_text("upstreams:\n  a:\n    command: x\n", encoding="utf-8")
     monkeypatch.setenv("BASTION_CONFIG", str(config_file))
     assert find_config() == config_file
+
+
+def test_audit_config_defaults_to_enabled() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.audit.enabled is True
+    assert config.audit.log_arguments is True
+
+
+def test_audit_config_can_be_disabled() -> None:
+    config = BastionConfig.model_validate(
+        {"upstreams": {"a": {"command": "x"}}, "audit": {"enabled": False}}
+    )
+    assert config.audit.enabled is False
+
+
+def test_audit_config_rejects_unknown_key() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}, "audit": {"bogus": 1}})

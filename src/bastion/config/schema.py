@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -62,12 +63,23 @@ class GatewaySettings(BaseModel):
     port: int = Field(default=8765, ge=1, le=65535)
 
 
+class AuditConfig(BaseModel):
+    """Whether and where the gateway writes its audit log."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    path: Path = Path("bastion-audit.jsonl")
+    log_arguments: bool = True
+
+
 class BastionConfig(BaseModel):
     """The top-level Bastion configuration."""
 
     model_config = ConfigDict(extra="forbid")
 
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
+    audit: AuditConfig = Field(default_factory=AuditConfig)
     upstreams: dict[str, Upstream] = Field(min_length=1)
 
     @model_validator(mode="after")

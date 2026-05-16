@@ -6,9 +6,9 @@ MCP servers it uses — capping spend, rate-limiting, enforcing per-action
 permissions, and auditing every tool call.
 
 > **Status: early development.** Bastion is being built in the open, milestone
-> by milestone. Today it works as a transparent multi-upstream MCP proxy with
-> config validation; policy enforcement (permissions, rate limits, budgets,
-> argument guards) and the audit log land over the next milestones — see the
+> by milestone. Today it is a transparent multi-upstream MCP proxy that writes
+> a full audit log of every tool call; policy enforcement (permissions, rate
+> limits, budgets, argument guards) lands over the next milestones — see the
 > [roadmap](#roadmap).
 
 ## Why
@@ -89,23 +89,29 @@ upstreams:                  # each key names an upstream MCP server
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
   search:
     url: https://search.example.com/mcp   # `url` ⇒ http upstream
+
+audit:                      # every tool call is logged here (JSON Lines)
+  enabled: true
+  path: ./bastion-audit.jsonl
 ```
 
-Policy sections (`policy`, `audit`, `cost`) are documented as they land — see
-the roadmap below.
+The remaining policy sections (`policy`, `cost`) are documented as they land —
+see the roadmap below.
 
 ## Roadmap
 
-Bastion is built in milestones; each adds one capability:
+Bastion is built in milestones; each adds one capability. The first PyPI release
+comes early — right after permissions — and every milestone after ships a release.
 
 - [x] **M0** — multi-upstream proxy (stdio + HTTP), config schema, CLI
-- [ ] **M1** — audit log: every tool call recorded to JSONL
+- [x] **M1** — audit log: every tool call recorded to JSONL
 - [ ] **M2** — permissions: per-tool allow/deny rules
-- [ ] **M3** — rate limiting: per-tool / per-client / global token buckets
-- [ ] **M4** — budgets: call-count and cost caps that survive restarts
-- [ ] **M5** — argument guards: block dangerous tool arguments
-- [ ] **M6** — live log viewer (`bastion tail`) and CLI polish
-- [ ] **M7** — docs, examples, `v0.1.0` release on PyPI
+- [ ] **M3** — first PyPI release (`pip install bastion`)
+- [ ] **M4** — rate limiting: per-tool / per-client / global token buckets
+- [ ] **M5** — budgets: call-count and cost caps that survive restarts
+- [ ] **M6** — argument guards: block dangerous tool arguments
+- [ ] **M7** — live log viewer (`bastion tail`) and CLI polish
+- [ ] **M8** — docs, examples, `v1.0.0`
 
 ## Contributing
 
