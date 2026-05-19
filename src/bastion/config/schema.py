@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 UPSTREAM_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 
 Transport = Literal["stdio", "http"]
+Action = Literal["allow", "deny"]
 
 
 class Upstream(BaseModel):
@@ -73,6 +74,28 @@ class AuditConfig(BaseModel):
     log_arguments: bool = True
 
 
+class PermissionRule(BaseModel):
+    """An allow/deny rule matching tool names by glob (e.g. ``files_*``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool: str = Field(min_length=1)
+    action: Action
+
+
+class PolicyConfig(BaseModel):
+    """Policy enforced on every tool call.
+
+    Permission rules are matched against tool names by glob; when several match
+    a tool, the most specific wins. When none match, ``default`` applies.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default: Action = "allow"
+    permissions: list[PermissionRule] = Field(default_factory=list)
+
+
 class BastionConfig(BaseModel):
     """The top-level Bastion configuration."""
 
@@ -80,6 +103,7 @@ class BastionConfig(BaseModel):
 
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    policy: PolicyConfig = Field(default_factory=PolicyConfig)
     upstreams: dict[str, Upstream] = Field(min_length=1)
 
     @model_validator(mode="after")

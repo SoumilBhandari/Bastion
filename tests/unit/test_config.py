@@ -145,3 +145,34 @@ def test_audit_config_can_be_disabled() -> None:
 def test_audit_config_rejects_unknown_key() -> None:
     with pytest.raises(ValidationError):
         BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}, "audit": {"bogus": 1}})
+
+
+def test_policy_defaults_to_allow_all() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.policy.default == "allow"
+    assert config.policy.permissions == []
+
+
+def test_policy_section_parses() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {
+                "default": "deny",
+                "permissions": [{"tool": "files_*", "action": "allow"}],
+            },
+        }
+    )
+    assert config.policy.default == "deny"
+    assert config.policy.permissions[0].tool == "files_*"
+    assert config.policy.permissions[0].action == "allow"
+
+
+def test_policy_rejects_invalid_action() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {
+                "upstreams": {"a": {"command": "x"}},
+                "policy": {"permissions": [{"tool": "x", "action": "maybe"}]},
+            }
+        )

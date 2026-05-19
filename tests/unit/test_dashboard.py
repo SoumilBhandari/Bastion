@@ -47,9 +47,16 @@ def test_summarize_counts_outcomes_and_duration() -> None:
     records = [
         {"outcome": "ok", "duration_ms": 10.0},
         {"outcome": "ok", "duration_ms": 5.0},
+        {"outcome": "denied", "duration_ms": 1.0},
         {"outcome": "error", "duration_ms": 2.0},
     ]
-    assert _summarize(records) == {"total": 3, "ok": 2, "errors": 1, "total_ms": 17.0}
+    assert _summarize(records) == {
+        "total": 4,
+        "ok": 2,
+        "denied": 1,
+        "errors": 1,
+        "total_ms": 18.0,
+    }
 
 
 def test_dashboard_serves_index(tmp_path: Path) -> None:

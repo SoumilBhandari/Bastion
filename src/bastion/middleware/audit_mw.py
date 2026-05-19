@@ -10,6 +10,7 @@ from mcp.types import CallToolRequestParams
 
 from bastion.audit.record import AuditRecord
 from bastion.audit.writer import AuditWriter
+from bastion.policy.models import PolicyDenied
 
 
 class AuditMiddleware(Middleware):
@@ -34,6 +35,10 @@ class AuditMiddleware(Middleware):
         start = time.monotonic()
         try:
             return await call_next(context)
+        except PolicyDenied as exc:
+            record.outcome = "denied"
+            record.error = str(exc)
+            raise
         except Exception as exc:
             record.outcome = "error"
             record.error = str(exc)

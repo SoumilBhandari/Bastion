@@ -19,3 +19,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `log_arguments`).
 - Local web dashboard (`bastion dashboard`): a browser view of the audit log
   with live tool-call history and summary stats.
+- Permissions: a `policy` config section with per-tool allow/deny rules
+  (glob-matched; the most specific rule wins). Denied calls are blocked before
+  reaching the upstream and recorded in the audit log with a `denied` outcome.

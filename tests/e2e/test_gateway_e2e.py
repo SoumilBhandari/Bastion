@@ -16,12 +16,15 @@ def _config(
     upstreams: dict[str, dict[str, Any]],
     *,
     audit_path: Path | None = None,
+    policy: dict[str, Any] | None = None,
 ) -> BastionConfig:
     raw: dict[str, Any] = {"upstreams": upstreams}
     if audit_path is None:
         raw["audit"] = {"enabled": False}
     else:
         raw["audit"] = {"enabled": True, "path": str(audit_path)}
+    if policy is not None:
+        raw["policy"] = policy
     return BastionConfig.model_validate(raw)
 
 
@@ -91,3 +94,40 @@ async def test_gateway_audit_records_a_failing_call(
     assert records[0]["tool"] == "boom"
     assert records[0]["outcome"] == "error"
     assert records[0]["error"]
+
+
+async def test_gateway_blocks_a_denied_tool(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        audit_path=audit_log,
+        policy={"default": "allow", "permissions": [{"tool": "delete_thing", "action": "deny"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        result = await client.call_tool("echo", {"text": "allowed"})
+        assert result.data == "allowed"
+        with pytest.raises(ToolError):
+            await client.call_tool("delete_thing", {"name": "x"})
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["tool"] == "echo"
+    assert records[0]["outcome"] == "ok"
+    assert records[1]["tool"] == "delete_thing"
+    assert records[1]["outcome"] == "denied"
+
+
+async def test_gateway_default_deny_blocks_unlisted_tools(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={"default": "deny", "permissions": [{"tool": "echo", "action": "allow"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        result = await client.call_tool("echo", {"text": "explicitly allowed"})
+        assert result.data == "explicitly allowed"
+        with pytest.raises(ToolError):
+            await client.call_tool("add", {"a": 1, "b": 1})

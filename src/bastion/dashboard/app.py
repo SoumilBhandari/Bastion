@@ -38,9 +38,16 @@ def _read_audit(path: Path) -> list[dict[str, Any]]:
 def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Compute headline stats over all audit records."""
     ok = sum(1 for r in records if r.get("outcome") == "ok")
+    denied = sum(1 for r in records if r.get("outcome") == "denied")
     errors = sum(1 for r in records if r.get("outcome") == "error")
     total_ms = sum(float(r.get("duration_ms") or 0.0) for r in records)
-    return {"total": len(records), "ok": ok, "errors": errors, "total_ms": round(total_ms, 1)}
+    return {
+        "total": len(records),
+        "ok": ok,
+        "denied": denied,
+        "errors": errors,
+        "total_ms": round(total_ms, 1),
+    }
 
 
 def build_dashboard_app(config: BastionConfig) -> Starlette:

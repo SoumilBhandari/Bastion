@@ -8,9 +8,12 @@ from bastion.config.loader import (
     load_config,
 )
 from bastion.config.schema import (
+    Action,
     AuditConfig,
     BastionConfig,
     GatewaySettings,
+    PermissionRule,
+    PolicyConfig,
     Transport,
     Upstream,
 )
@@ -18,10 +21,13 @@ from bastion.config.schema import (
 __all__ = [
     "CONFIG_ENV_VAR",
     "DEFAULT_CONFIG_NAME",
+    "Action",
     "AuditConfig",
     "BastionConfig",
     "ConfigError",
     "GatewaySettings",
+    "PermissionRule",
+    "PolicyConfig",
     "Transport",
     "Upstream",
     "find_config",

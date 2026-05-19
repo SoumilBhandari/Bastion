@@ -2,5 +2,6 @@
 
 from bastion.middleware.audit_mw import AuditMiddleware
 from bastion.middleware.error_mw import ErrorBoundary
+from bastion.middleware.policy_mw import PolicyMiddleware
 
-__all__ = ["AuditMiddleware", "ErrorBoundary"]
+__all__ = ["AuditMiddleware", "ErrorBoundary", "PolicyMiddleware"]

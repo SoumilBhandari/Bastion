@@ -6,10 +6,9 @@ MCP servers it uses — capping spend, rate-limiting, enforcing per-action
 permissions, and auditing every tool call.
 
 > **Status: early development.** Bastion is being built in the open, milestone
-> by milestone. Today it is a transparent multi-upstream MCP proxy that writes
-> a full audit log of every tool call; policy enforcement (permissions, rate
-> limits, budgets, argument guards) lands over the next milestones — see the
-> [roadmap](#roadmap).
+> by milestone. Today it proxies your MCP servers, writes a full audit log of
+> every tool call, and enforces per-tool **permissions**; rate limits, budgets,
+> and argument guards land over the next milestones — see the [roadmap](#roadmap).
 
 ## Why
 
@@ -26,8 +25,8 @@ no database.
 
 Your agent points at Bastion instead of at its MCP servers directly. Bastion is
 both an MCP server (to the agent) and an MCP client (to the real "upstream"
-servers). It aggregates your upstreams behind one endpoint and — as policy
-features land — enforces rules on every `tools/call`:
+servers). It aggregates your upstreams behind one endpoint and enforces rules on
+every `tools/call`:
 
 ```
   AI agent  ──MCP──▶  Bastion  ──MCP──▶  upstream server A
@@ -93,10 +92,26 @@ upstreams:                  # each key names an upstream MCP server
 audit:                      # every tool call is logged here (JSON Lines)
   enabled: true
   path: ./bastion-audit.jsonl
+
+policy:                     # per-tool allow/deny (most-specific rule wins)
+  default: allow
+  permissions:
+    - { tool: "files_read_*",   action: allow }
+    - { tool: "files_delete_*", action: deny  }
 ```
 
-The remaining policy sections (`policy`, `cost`) are documented as they land —
-see the roadmap below.
+A denied call is blocked before it reaches the upstream and recorded in the
+audit log. The `cost` section (budgets) is documented as it lands — see the
+roadmap below.
+
+## Dashboard
+
+`bastion dashboard` serves a local web view of the audit log — every tool call,
+live, with arguments, outcomes, and timings:
+
+```bash
+bastion dashboard --config bastion.yaml   # then open http://127.0.0.1:8787
+```
 
 ## Roadmap
 
@@ -105,7 +120,7 @@ comes early — right after permissions — and every milestone after ships a re
 
 - [x] **M0** — multi-upstream proxy (stdio + HTTP), config schema, CLI
 - [x] **M1** — audit log: every tool call recorded to JSONL
-- [ ] **M2** — permissions: per-tool allow/deny rules
+- [x] **M2** — permissions: per-tool allow/deny rules
 - [ ] **M3** — first PyPI release (`pip install bastion`)
 - [ ] **M4** — rate limiting: per-tool / per-client / global token buckets
 - [ ] **M5** — budgets: call-count and cost caps that survive restarts
