@@ -36,15 +36,18 @@ every `tools/call`:
 
 ## Install
 
-Not yet on PyPI. For now, install from source:
+```bash
+pip install bastion-mcp
+```
+
+This installs the `bastion` command. To run it without installing globally,
+use [uv](https://github.com/astral-sh/uv):
 
 ```bash
-git clone https://github.com/SoumilBhandari/Bastion
-cd Bastion
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
-pip install -e .
+uvx --from bastion-mcp bastion --help
 ```
+
+To hack on Bastion itself, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Quickstart
 
