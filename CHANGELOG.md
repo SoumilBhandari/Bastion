@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-19
+
 ### Added
 
 - Project skeleton: packaging (`pyproject.toml`), Apache-2.0 license, CI.
@@ -13,7 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sections, with friendly validation errors.
 - Gateway that proxies and aggregates one or more upstream MCP servers over
   stdio and HTTP transports.
-- CLI: `bastion run`, `bastion validate`, `bastion version`.
+- CLI: `bastion run`, `bastion validate`, `bastion dashboard`, `bastion version`, and root `--version` flag.
 - Audit logging: every tool call through the gateway is recorded to a JSON
   Lines file. New optional `audit` config section (`enabled`, `path`,
   `log_arguments`).
@@ -22,3 +24,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Permissions: a `policy` config section with per-tool allow/deny rules
   (glob-matched; the most specific rule wins). Denied calls are blocked before
   reaching the upstream and recorded in the audit log with a `denied` outcome.
+- PEP 561 `py.typed` marker, so downstream type checkers pick up Bastion's
+  shipped type hints.

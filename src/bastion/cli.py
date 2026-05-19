@@ -23,6 +23,27 @@ ConfigOption = Annotated[
 ]
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"bastion {__version__}")
+        raise typer.Exit
+
+
+@app.callback()
+def main(
+    version: Annotated[
+        bool | None,
+        typer.Option(
+            "--version",
+            callback=_version_callback,
+            help="Print the bastion version.",
+            is_eager=True,
+        ),
+    ] = None,
+) -> None:
+    """A local-first control plane for your AI agent's tools."""
+
+
 def _load(config: Path | None) -> BastionConfig:
     """Locate and load the config, exiting cleanly on any configuration error."""
     try:
