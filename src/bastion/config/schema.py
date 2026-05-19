@@ -83,6 +83,22 @@ class PermissionRule(BaseModel):
     action: Action
 
 
+class RateLimitRule(BaseModel):
+    """A rate-limit rule applied to tool calls.
+
+    Each rule maintains a token bucket. ``scope`` chooses bucket granularity:
+    ``global`` shares one bucket across all calls; ``per_tool`` keeps a
+    separate bucket per distinct tool name.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    scope: Literal["global", "per_tool"] = "global"
+    max_per_minute: int = Field(ge=1)
+    burst: int | None = Field(default=None, ge=1)
+
+
 class PolicyConfig(BaseModel):
     """Policy enforced on every tool call.
 
@@ -94,6 +110,7 @@ class PolicyConfig(BaseModel):
 
     default: Action = "allow"
     permissions: list[PermissionRule] = Field(default_factory=list)
+    rate_limits: list[RateLimitRule] = Field(default_factory=list)
 
 
 class BastionConfig(BaseModel):
