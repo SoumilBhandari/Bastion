@@ -22,3 +22,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Permissions: a `policy` config section with per-tool allow/deny rules
   (glob-matched; the most specific rule wins). Denied calls are blocked before
   reaching the upstream and recorded in the audit log with a `denied` outcome.
+- PEP 561 `py.typed` marker, so downstream type checkers pick up Bastion's
+  shipped type hints.
