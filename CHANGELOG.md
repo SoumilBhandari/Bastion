@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Rate limiting: a `policy.rate_limits` config section with per-rule token
+  buckets. Each rule has a `name`, a `scope` (`global` or `per_tool`), a
+  `max_per_minute` cap, and an optional `burst`. Calls past a rule's budget
+  are blocked before reaching the upstream and recorded in the audit log
+  with `outcome: denied` and the rule name in `error`.
+
 ## [0.1.0] - 2026-05-19
 
 ### Added
