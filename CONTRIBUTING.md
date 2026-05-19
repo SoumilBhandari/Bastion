@@ -13,10 +13,40 @@ welcome — code, tests, docs, examples, and bug reports.
 - For larger work, check the roadmap in `README.md` and comment on (or open) the
   relevant issue first, so efforts don't collide.
 
+## How changes get in
+
+Bastion keeps two long-lived branches:
+
+- **`dev`** — the integration branch. All contributions land here first, and it's
+  the repository's default branch, so pull requests target it automatically.
+- **`main`** — the stable branch. It only moves when `dev` is merged into it, and
+  releases are tagged from `main`.
+
+You don't need write access to this repository to contribute — you work from your
+own fork:
+
+1. **Fork** the repo with the *Fork* button on GitHub. That gives you a personal
+   copy you can push to.
+2. **Clone your fork** and create a branch off `dev`:
+
+   ```bash
+   git clone https://github.com/<your-username>/Bastion
+   cd Bastion
+   git checkout dev
+   git checkout -b short-description-of-change
+   ```
+
+3. Make your changes, commit them, and **push the branch to your fork**.
+4. **Open a pull request** targeting this repo's `dev` branch. CI runs on it
+   automatically, and a maintainer reviews from there.
+
+Once it's merged into `dev`, your change ships to `main` with the next release.
+
 ## Development setup
 
+Once you've forked and cloned (see above), set up the environment:
+
 ```bash
-git clone https://github.com/SoumilBhandari/Bastion
 cd Bastion
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
