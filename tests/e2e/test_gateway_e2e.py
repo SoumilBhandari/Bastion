@@ -131,3 +131,54 @@ async def test_gateway_default_deny_blocks_unlisted_tools(
         assert result.data == "explicitly allowed"
         with pytest.raises(ToolError):
             await client.call_tool("add", {"a": 1, "b": 1})
+
+
+async def test_gateway_rate_limits_tool_calls(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """A global rate-limit rule blocks calls past its burst budget."""
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        audit_path=audit_log,
+        policy={
+            "rate_limits": [
+                {"name": "tight-cap", "scope": "global", "max_per_minute": 1, "burst": 1}
+            ]
+        },
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        result = await client.call_tool("echo", {"text": "first"})
+        assert result.data == "first"
+        with pytest.raises(ToolError):
+            await client.call_tool("echo", {"text": "second"})
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2
+    assert records[0]["outcome"] == "ok"
+    assert records[1]["outcome"] == "denied"
+    assert records[1]["error"] and "tight-cap" in records[1]["error"]
+
+
+async def test_gateway_per_tool_rate_limit_isolates_buckets(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    """A per_tool rate-limit rule keeps a separate bucket per tool name."""
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={
+            "rate_limits": [
+                {"name": "per-tool", "scope": "per_tool", "max_per_minute": 1, "burst": 1}
+            ]
+        },
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        # echo consumes its bucket
+        echo_result = await client.call_tool("echo", {"text": "hi"})
+        assert echo_result.data == "hi"
+        with pytest.raises(ToolError):
+            await client.call_tool("echo", {"text": "again"})
+        # add has its own bucket and still works
+        add_result = await client.call_tool("add", {"a": 1, "b": 2})
+        assert add_result.data == 3
