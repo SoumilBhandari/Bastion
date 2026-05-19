@@ -1,6 +1,17 @@
 # Contributing to Bastion
 
-Thanks for your interest in improving Bastion.
+Thanks for your interest in improving Bastion! Contributions of all kinds are
+welcome — code, tests, docs, examples, and bug reports.
+
+## Where to start
+
+- Browse [open issues](https://github.com/SoumilBhandari/Bastion/issues),
+  especially those labeled
+  [`good first issue`](https://github.com/SoumilBhandari/Bastion/labels/good%20first%20issue).
+- Found a bug or have an idea?
+  [Open an issue](https://github.com/SoumilBhandari/Bastion/issues/new/choose).
+- For larger work, check the roadmap in `README.md` and comment on (or open) the
+  relevant issue first, so efforts don't collide.
 
 ## Development setup
 
@@ -23,12 +34,15 @@ mypy
 pytest
 ```
 
-All four must pass. CI runs them on Python 3.11, 3.12, and 3.13.
+All four must pass — CI runs them on Python 3.11, 3.12, and 3.13.
 
 ## Guidelines
 
 - Keep changes focused — one concern per pull request.
 - Add or update tests for any behavior change.
 - Record user-facing changes in `CHANGELOG.md` under `## [Unreleased]`.
-- Bastion is built milestone by milestone; check the roadmap in `README.md`
-  before starting larger work so efforts do not collide.
+
+## Code of Conduct & security
+
+By participating you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md).
+To report a security vulnerability, see [SECURITY.md](SECURITY.md).
