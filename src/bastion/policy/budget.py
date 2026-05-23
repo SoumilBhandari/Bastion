@@ -14,7 +14,7 @@ Period = Literal["minute", "hour", "day"]
 DateTimeFn = Callable[[], datetime]
 
 
-def _utc_now() -> datetime:
+def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
@@ -56,7 +56,7 @@ class BudgetCounter:
         *,
         max_calls: int | None = None,
         max_cost: float | None = None,
-        now: DateTimeFn = _utc_now,
+        now: DateTimeFn = utc_now,
     ) -> None:
         if max_calls is None and max_cost is None:
             raise ValueError("at least one of max_calls or max_cost must be set")
@@ -129,7 +129,7 @@ class BudgetTracker:
         self,
         rules: list[BudgetRule],
         *,
-        now: DateTimeFn = _utc_now,
+        now: DateTimeFn = utc_now,
         checkpoint_path: Path | None = None,
     ) -> None:
         self._rules = list(rules)
