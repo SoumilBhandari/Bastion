@@ -40,9 +40,7 @@ class PolicyEngine:
         self._rate_limiter = RateLimiter(policy.rate_limits, clock=clock)
         self._cost_model = CostModel(cost or CostConfig())
         checkpoint = policy.budget_checkpoint if policy.budgets else None
-        self._budgets = BudgetTracker(
-            policy.budgets, now=now, checkpoint_path=checkpoint
-        )
+        self._budgets = BudgetTracker(policy.budgets, now=now, checkpoint_path=checkpoint)
 
     def check(self, tool: str) -> PolicyDecision:
         """Peek: decide whether the given tool call is allowed.
