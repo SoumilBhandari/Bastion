@@ -56,5 +56,5 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
     if config.audit.enabled:
         writer = AuditWriter(config.audit.path)
         gateway.add_middleware(AuditMiddleware(writer, log_arguments=config.audit.log_arguments))
-    gateway.add_middleware(PolicyMiddleware(PolicyEngine(config.policy)))
+    gateway.add_middleware(PolicyMiddleware(PolicyEngine(config.policy, cost=config.cost)))
     return gateway
