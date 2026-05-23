@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Literal
 
 import pytest
@@ -177,3 +178,81 @@ def test_tracker_peek_does_not_consume() -> None:
         assert tracker.peek("t", 0.0)[0]
     tracker.reserve("t", 0.0)
     assert not tracker.peek("t", 0.0)[0]
+
+
+# ------------- checkpoint persistence -------------
+
+
+def test_counter_state_round_trips() -> None:
+    clock = FakeUTC(_at(2026, 5, 19))
+    counter = BudgetCounter("day", max_calls=10, max_cost=5.0, now=clock)
+    counter.reserve(1.0)
+    counter.reserve(2.0)
+    state = counter.state()
+
+    restored = BudgetCounter("day", max_calls=10, max_cost=5.0, now=clock)
+    restored.restore(state)
+    assert restored.calls == 2
+    assert restored.cost == 3.0
+
+
+def test_tracker_persists_state_to_disk(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    rules = [_rule("cap", max_calls=10)]
+    tracker = BudgetTracker(rules, now=FakeUTC(_at(2026, 5, 19)), checkpoint_path=path)
+    tracker.reserve("t", 0.0)
+    tracker.reserve("t", 0.0)
+    assert path.exists()
+
+
+def test_tracker_restores_state_on_restart(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    rules = [_rule("cap", max_calls=2)]
+    clock = FakeUTC(_at(2026, 5, 19))
+
+    tracker1 = BudgetTracker(rules, now=clock, checkpoint_path=path)
+    tracker1.reserve("t", 0.0)
+    tracker1.reserve("t", 0.0)
+    assert not tracker1.peek("t", 0.0)[0]
+
+    # "Restart" — fresh tracker loads state from disk
+    tracker2 = BudgetTracker(rules, now=clock, checkpoint_path=path)
+    assert not tracker2.peek("t", 0.0)[0]
+
+
+def test_tracker_handles_missing_checkpoint(tmp_path: Path) -> None:
+    path = tmp_path / "nonexistent.json"
+    rules = [_rule("cap", max_calls=2)]
+    tracker = BudgetTracker(rules, now=FakeUTC(_at(2026, 5, 19)), checkpoint_path=path)
+    assert tracker.peek("t", 0.0)[0]
+
+
+def test_tracker_window_rolls_after_restart(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    rules = [_rule("cap", max_calls=1)]
+
+    clock1 = FakeUTC(_at(2026, 5, 19))
+    tracker1 = BudgetTracker(rules, now=clock1, checkpoint_path=path)
+    tracker1.reserve("t", 0.0)
+    assert not tracker1.peek("t", 0.0)[0]
+
+    # Restart on the next day -> window rolls, counters reset
+    clock2 = FakeUTC(_at(2026, 5, 20))
+    tracker2 = BudgetTracker(rules, now=clock2, checkpoint_path=path)
+    assert tracker2.peek("t", 0.0)[0]
+
+
+def test_tracker_ignores_stale_rule_entries(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    # First run with two rules
+    rules_v1 = [_rule("a", max_calls=10), _rule("b", max_calls=10)]
+    clock = FakeUTC(_at(2026, 5, 19))
+    tracker1 = BudgetTracker(rules_v1, now=clock, checkpoint_path=path)
+    tracker1.reserve("t", 0.0)
+
+    # Second run with only one rule — the stale "1:..." entry is dropped
+    rules_v2 = [_rule("a", max_calls=10)]
+    tracker2 = BudgetTracker(rules_v2, now=clock, checkpoint_path=path)
+    # Loaded counter for rule 0 is still there
+    ok, _ = tracker2.peek("t", 0.0)
+    assert ok

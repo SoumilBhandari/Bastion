@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 from bastion.config.schema import BudgetRule, CostConfig
 
@@ -96,6 +98,21 @@ class BudgetCounter:
         self._calls += 1
         self._cost += cost
 
+    def state(self) -> dict[str, Any]:
+        """Export the counter's current state for checkpointing."""
+        self._maybe_roll()
+        return {"window": self._window, "calls": self._calls, "cost": self._cost}
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Replace the counter's state with a previously exported snapshot.
+
+        The next access (peek/reserve) will roll the window forward if the
+        snapshot is from an earlier window, resetting the counters.
+        """
+        self._window = str(state["window"])
+        self._calls = int(state["calls"])
+        self._cost = float(state["cost"])
+
 
 class BudgetTracker:
     """Coordinates a list of budget rules against tool calls.
@@ -113,10 +130,13 @@ class BudgetTracker:
         rules: list[BudgetRule],
         *,
         now: DateTimeFn = _utc_now,
+        checkpoint_path: Path | None = None,
     ) -> None:
         self._rules = list(rules)
         self._now = now
         self._counters: dict[tuple[int, str], BudgetCounter] = {}
+        self._checkpoint_path = checkpoint_path
+        self._load()
 
     @staticmethod
     def _scope_key(rule: BudgetRule, tool: str) -> str:
@@ -147,3 +167,34 @@ class BudgetTracker:
         """Record one call of ``cost`` against every applicable budget rule."""
         for index, rule in enumerate(self._rules):
             self._counter(index, rule, tool).reserve(cost)
+        self._save()
+
+    def _load(self) -> None:
+        if self._checkpoint_path is None or not self._checkpoint_path.exists():
+            return
+        raw = json.loads(self._checkpoint_path.read_text(encoding="utf-8"))
+        for key_str, state in raw.items():
+            rule_idx_str, scope_key = key_str.split(":", 1)
+            rule_idx = int(rule_idx_str)
+            if rule_idx >= len(self._rules):
+                continue  # stale entry; the rule no longer exists
+            rule = self._rules[rule_idx]
+            counter = BudgetCounter(
+                rule.per,
+                max_calls=rule.max_calls,
+                max_cost=rule.max_cost,
+                now=self._now,
+            )
+            counter.restore(state)
+            self._counters[(rule_idx, scope_key)] = counter
+
+    def _save(self) -> None:
+        if self._checkpoint_path is None:
+            return
+        state = {
+            f"{rule_idx}:{scope_key}": counter.state()
+            for (rule_idx, scope_key), counter in self._counters.items()
+        }
+        tmp = self._checkpoint_path.with_suffix(self._checkpoint_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+        tmp.replace(self._checkpoint_path)
