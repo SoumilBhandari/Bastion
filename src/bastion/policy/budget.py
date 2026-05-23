@@ -86,11 +86,9 @@ class BudgetCounter:
     def peek(self, cost: float) -> bool:
         """Whether one more call costing ``cost`` would still fit in the window."""
         self._maybe_roll()
-        if self._max_calls is not None and self._calls + 1 > self._max_calls:
-            return False
-        if self._max_cost is not None and self._cost + cost > self._max_cost:
-            return False
-        return True
+        over_calls = self._max_calls is not None and self._calls + 1 > self._max_calls
+        over_cost = self._max_cost is not None and self._cost + cost > self._max_cost
+        return not (over_calls or over_cost)
 
     def reserve(self, cost: float) -> None:
         """Record one call of ``cost`` against this rule's window."""
