@@ -17,6 +17,7 @@ def _config(
     *,
     audit_path: Path | None = None,
     policy: dict[str, Any] | None = None,
+    cost: dict[str, Any] | None = None,
 ) -> BastionConfig:
     raw: dict[str, Any] = {"upstreams": upstreams}
     if audit_path is None:
@@ -25,6 +26,8 @@ def _config(
         raw["audit"] = {"enabled": True, "path": str(audit_path)}
     if policy is not None:
         raw["policy"] = policy
+    if cost is not None:
+        raw["cost"] = cost
     return BastionConfig.model_validate(raw)
 
 
@@ -182,3 +185,72 @@ async def test_gateway_per_tool_rate_limit_isolates_buckets(
         # add has its own bucket and still works
         add_result = await client.call_tool("add", {"a": 1, "b": 2})
         assert add_result.data == 3
+
+
+async def test_gateway_blocks_when_over_call_budget(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """A daily call-count budget blocks calls past the cap and audits the denial."""
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        audit_path=audit_log,
+        policy={
+            "budgets": [
+                {"name": "daily-cap", "scope": "global", "per": "day", "max_calls": 2}
+            ],
+            "budget_checkpoint": None,
+        },
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        await client.call_tool("echo", {"text": "first"})
+        await client.call_tool("echo", {"text": "second"})
+        with pytest.raises(ToolError):
+            await client.call_tool("echo", {"text": "third"})
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert [r["outcome"] for r in records] == ["ok", "ok", "denied"]
+    assert "daily-cap" in records[2]["error"]
+
+
+async def test_gateway_blocks_when_over_cost_budget(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    """A cost budget blocks the call whose cost would push it over the cap."""
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        cost={"per_tool": {"echo": 0.4, "add": 0.4}},
+        policy={
+            "budgets": [{"name": "spend", "scope": "global", "per": "day", "max_cost": 1.0}],
+            "budget_checkpoint": None,
+        },
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        await client.call_tool("echo", {"text": "a"})  # 0.4, total 0.4
+        await client.call_tool("add", {"a": 1, "b": 2})  # 0.4, total 0.8
+        with pytest.raises(ToolError):
+            await client.call_tool("echo", {"text": "c"})  # would push to 1.2 > 1.0
+
+
+async def test_gateway_budget_survives_a_restart(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """When checkpointing is enabled, budget counters persist across gateway rebuilds."""
+    checkpoint = tmp_path / "budgets.json"
+    policy = {
+        "budgets": [{"name": "daily-cap", "scope": "global", "per": "day", "max_calls": 2}],
+        "budget_checkpoint": str(checkpoint),
+    }
+    config = _config(_stdio(python_exe, sample_upstream), policy=policy)
+
+    gateway1 = build_gateway(config)
+    async with Client(gateway1) as client:
+        await client.call_tool("echo", {"text": "1"})
+        await client.call_tool("echo", {"text": "2"})
+
+    # Rebuild — loads counters from disk
+    gateway2 = build_gateway(config)
+    async with Client(gateway2) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool("echo", {"text": "3"})
