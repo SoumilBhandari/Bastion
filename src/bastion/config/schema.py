@@ -113,6 +113,31 @@ class RateLimitRule(BaseModel):
     burst: int | None = Field(default=None, ge=1)
 
 
+class BudgetRule(BaseModel):
+    """A budget rule with a fixed time window.
+
+    Either ``max_calls`` or ``max_cost`` (or both) must be set. The window
+    resets at the boundary: UTC midnight for ``day``, the top of the hour for
+    ``hour``, the top of the minute for ``minute``. ``scope`` chooses whether
+    one counter is shared across all calls (``global``) or kept per tool
+    (``per_tool``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    scope: Literal["global", "per_tool"] = "global"
+    per: Literal["minute", "hour", "day"]
+    max_calls: int | None = Field(default=None, ge=1)
+    max_cost: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def _at_least_one_cap(self) -> BudgetRule:
+        if self.max_calls is None and self.max_cost is None:
+            raise ValueError("budget rule must set max_calls or max_cost (or both)")
+        return self
+
+
 class PolicyConfig(BaseModel):
     """Policy enforced on every tool call.
 
@@ -125,6 +150,7 @@ class PolicyConfig(BaseModel):
     default: Action = "allow"
     permissions: list[PermissionRule] = Field(default_factory=list)
     rate_limits: list[RateLimitRule] = Field(default_factory=list)
+    budgets: list[BudgetRule] = Field(default_factory=list)
 
 
 class BastionConfig(BaseModel):
