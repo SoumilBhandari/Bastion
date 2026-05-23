@@ -176,3 +176,95 @@ def test_policy_rejects_invalid_action() -> None:
                 "policy": {"permissions": [{"tool": "x", "action": "maybe"}]},
             }
         )
+
+
+def test_cost_defaults_to_zero() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.cost.default_per_call == 0.0
+    assert config.cost.per_tool == {}
+
+
+def test_cost_section_parses() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "cost": {"default_per_call": 0.001, "per_tool": {"search_web": 0.01}},
+        }
+    )
+    assert config.cost.default_per_call == 0.001
+    assert config.cost.per_tool == {"search_web": 0.01}
+
+
+def test_cost_rejects_negative_default() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {"upstreams": {"a": {"command": "x"}}, "cost": {"default_per_call": -0.01}}
+        )
+
+
+def test_budgets_default_to_empty() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.policy.budgets == []
+
+
+def test_budgets_section_parses() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {
+                "budgets": [
+                    {"name": "daily-spend", "scope": "global", "per": "day", "max_cost": 5.0},
+                    {"name": "hourly-calls", "per": "hour", "max_calls": 1000},
+                ]
+            },
+        }
+    )
+    assert len(config.policy.budgets) == 2
+    assert config.policy.budgets[0].name == "daily-spend"
+    assert config.policy.budgets[0].max_cost == 5.0
+    assert config.policy.budgets[1].max_calls == 1000
+
+
+def test_budget_rejects_no_cap() -> None:
+    with pytest.raises(ValidationError, match="max_calls or max_cost"):
+        BastionConfig.model_validate(
+            {
+                "upstreams": {"a": {"command": "x"}},
+                "policy": {"budgets": [{"name": "empty", "per": "day"}]},
+            }
+        )
+
+
+def test_budget_rejects_invalid_window() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {
+                "upstreams": {"a": {"command": "x"}},
+                "policy": {"budgets": [{"name": "x", "per": "week", "max_calls": 1}]},
+            }
+        )
+
+
+def test_budget_checkpoint_default() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.policy.budget_checkpoint == Path("bastion-budgets.json")
+
+
+def test_budget_checkpoint_custom_path() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {"budget_checkpoint": "/var/lib/bastion/budgets.json"},
+        }
+    )
+    assert config.policy.budget_checkpoint == Path("/var/lib/bastion/budgets.json")
+
+
+def test_budget_checkpoint_can_be_disabled() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {"budget_checkpoint": None},
+        }
+    )
+    assert config.policy.budget_checkpoint is None

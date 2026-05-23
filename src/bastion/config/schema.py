@@ -74,6 +74,20 @@ class AuditConfig(BaseModel):
     log_arguments: bool = True
 
 
+class CostConfig(BaseModel):
+    """Per-call cost model used by budget rules.
+
+    Costs are unit-agnostic (typically US dollars). The cost charged for a
+    given tool call is ``per_tool[name]`` if the tool is listed; otherwise
+    ``default_per_call``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_per_call: float = Field(default=0.0, ge=0.0)
+    per_tool: dict[str, float] = Field(default_factory=dict)
+
+
 class PermissionRule(BaseModel):
     """An allow/deny rule matching tool names by glob (e.g. ``files_*``)."""
 
@@ -81,6 +95,47 @@ class PermissionRule(BaseModel):
 
     tool: str = Field(min_length=1)
     action: Action
+
+
+class RateLimitRule(BaseModel):
+    """A rate-limit rule applied to tool calls.
+
+    Each rule maintains a token bucket. ``scope`` chooses bucket granularity:
+    ``global`` shares one bucket across all calls; ``per_tool`` keeps a
+    separate bucket per distinct tool name.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    scope: Literal["global", "per_tool"] = "global"
+    max_per_minute: int = Field(ge=1)
+    burst: int | None = Field(default=None, ge=1)
+
+
+class BudgetRule(BaseModel):
+    """A budget rule with a fixed time window.
+
+    Either ``max_calls`` or ``max_cost`` (or both) must be set. The window
+    resets at the boundary: UTC midnight for ``day``, the top of the hour for
+    ``hour``, the top of the minute for ``minute``. ``scope`` chooses whether
+    one counter is shared across all calls (``global``) or kept per tool
+    (``per_tool``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    scope: Literal["global", "per_tool"] = "global"
+    per: Literal["minute", "hour", "day"]
+    max_calls: int | None = Field(default=None, ge=1)
+    max_cost: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def _at_least_one_cap(self) -> BudgetRule:
+        if self.max_calls is None and self.max_cost is None:
+            raise ValueError("budget rule must set max_calls or max_cost (or both)")
+        return self
 
 
 class PolicyConfig(BaseModel):
@@ -94,6 +149,9 @@ class PolicyConfig(BaseModel):
 
     default: Action = "allow"
     permissions: list[PermissionRule] = Field(default_factory=list)
+    rate_limits: list[RateLimitRule] = Field(default_factory=list)
+    budgets: list[BudgetRule] = Field(default_factory=list)
+    budget_checkpoint: Path | None = Path("bastion-budgets.json")
 
 
 class BastionConfig(BaseModel):
@@ -103,6 +161,7 @@ class BastionConfig(BaseModel):
 
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    cost: CostConfig = Field(default_factory=CostConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     upstreams: dict[str, Upstream] = Field(min_length=1)
 

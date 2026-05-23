@@ -2,21 +2,70 @@
 
 from __future__ import annotations
 
-from bastion.config.schema import PolicyConfig
+import time
+
+from bastion.config.schema import CostConfig, PolicyConfig
+from bastion.policy.budget import BudgetTracker, CostModel, DateTimeFn, utc_now
 from bastion.policy.models import PolicyDecision
 from bastion.policy.permissions import PermissionChecker
+from bastion.policy.ratelimit import Clock, RateLimiter
 
 
 class PolicyEngine:
     """Evaluates policy for every tool call that reaches the gateway.
 
-    At this milestone the engine runs permission checks only; rate limits,
-    budgets, and argument guards are layered in by later milestones.
+    The engine runs in two phases:
+
+    * :meth:`check` is a read-only "peek" — runs permissions, then a
+      rate-limit peek, then a budget peek. It does not consume rate-limit
+      tokens or increment budget counters.
+    * :meth:`reserve` is called after a successful check and atomically
+      consumes one token from each rate-limit rule and increments each
+      applicable budget counter.
+
+    Splitting peek from reserve lets the middleware decide before any state
+    mutation and keeps the hot path correct under single-threaded asyncio
+    (peek + reserve can run between awaits without interleaving).
     """
 
-    def __init__(self, policy: PolicyConfig) -> None:
+    def __init__(
+        self,
+        policy: PolicyConfig,
+        *,
+        cost: CostConfig | None = None,
+        clock: Clock = time.monotonic,
+        now: DateTimeFn = utc_now,
+    ) -> None:
         self._permissions = PermissionChecker(policy.permissions, policy.default)
+        self._rate_limiter = RateLimiter(policy.rate_limits, clock=clock)
+        self._cost_model = CostModel(cost or CostConfig())
+        checkpoint = policy.budget_checkpoint if policy.budgets else None
+        self._budgets = BudgetTracker(policy.budgets, now=now, checkpoint_path=checkpoint)
 
     def check(self, tool: str) -> PolicyDecision:
-        """Decide whether the given tool call is allowed."""
-        return self._permissions.check(tool)
+        """Peek: decide whether the given tool call is allowed.
+
+        Permission rules are evaluated first; on a permission denial the
+        rate-limit and budget checks are skipped (denied calls do not
+        consume tokens or count against budgets).
+        """
+        permission = self._permissions.check(tool)
+        if not permission.allowed:
+            return permission
+        ok, reason = self._rate_limiter.peek(tool)
+        if not ok:
+            return PolicyDecision(allowed=False, reason=reason or "rate-limited")
+        cost = self._cost_model.cost_for(tool)
+        ok, reason = self._budgets.peek(tool, cost)
+        if not ok:
+            return PolicyDecision(allowed=False, reason=reason or "over budget")
+        return permission
+
+    def reserve(self, tool: str) -> None:
+        """Consume rate-limit tokens and increment budget counters.
+
+        Call after :meth:`check` returned an allowed decision.
+        """
+        self._rate_limiter.reserve(tool)
+        cost = self._cost_model.cost_for(tool)
+        self._budgets.reserve(tool, cost)

@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-19
+
+### Added
+
+- Rate limiting: a `policy.rate_limits` config section with per-rule token
+  buckets. Each rule has a `name`, a `scope` (`global` or `per_tool`), a
+  `max_per_minute` cap, and an optional `burst`. Calls past a rule's budget
+  are blocked before reaching the upstream and recorded in the audit log
+  with `outcome: denied` and the rule name in `error`.
+- Budgets: a `policy.budgets` config section with per-rule fixed-window
+  counters. Each rule has a `name`, a `scope` (`global` or `per_tool`), a
+  `per` window (`minute`, `hour`, or `day`), and at least one of
+  `max_calls` or `max_cost`. Calls past a budget are blocked and recorded
+  the same way as rate-limit denials. Counters are persisted to
+  `policy.budget_checkpoint` (default `bastion-budgets.json`) so caps
+  survive a restart; set the path to `null` to disable.
+- Cost model: a new top-level `cost` config section with `default_per_call`
+  and a `per_tool` map of overrides. The resolved cost is what budget rules
+  with a `max_cost` charge against.
+
 ## [0.1.0] - 2026-05-19
 
 ### Added
