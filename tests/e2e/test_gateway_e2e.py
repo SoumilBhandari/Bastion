@@ -196,9 +196,7 @@ async def test_gateway_blocks_when_over_call_budget(
         _stdio(python_exe, sample_upstream),
         audit_path=audit_log,
         policy={
-            "budgets": [
-                {"name": "daily-cap", "scope": "global", "per": "day", "max_calls": 2}
-            ],
+            "budgets": [{"name": "daily-cap", "scope": "global", "per": "day", "max_calls": 2}],
             "budget_checkpoint": None,
         },
     )
@@ -213,9 +211,7 @@ async def test_gateway_blocks_when_over_call_budget(
     assert "daily-cap" in records[2]["error"]
 
 
-async def test_gateway_blocks_when_over_cost_budget(
-    sample_upstream: Path, python_exe: str
-) -> None:
+async def test_gateway_blocks_when_over_cost_budget(sample_upstream: Path, python_exe: str) -> None:
     """A cost budget blocks the call whose cost would push it over the cap."""
     config = _config(
         _stdio(python_exe, sample_upstream),
