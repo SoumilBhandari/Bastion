@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Literal
 
-from bastion.config.schema import CostConfig
+from bastion.config.schema import BudgetRule, CostConfig
 
 Period = Literal["minute", "hour", "day"]
 DateTimeFn = Callable[[], datetime]
@@ -95,3 +95,55 @@ class BudgetCounter:
         self._maybe_roll()
         self._calls += 1
         self._cost += cost
+
+
+class BudgetTracker:
+    """Coordinates a list of budget rules against tool calls.
+
+    Each rule gets its own :class:`BudgetCounter`(s); ``scope`` decides
+    granularity: ``global`` shares one counter, ``per_tool`` keeps a
+    separate counter per distinct tool name.
+
+    Use :meth:`peek` to test whether a call is allowed (no mutation), and
+    :meth:`reserve` to record the call against every rule.
+    """
+
+    def __init__(
+        self,
+        rules: list[BudgetRule],
+        *,
+        now: DateTimeFn = _utc_now,
+    ) -> None:
+        self._rules = list(rules)
+        self._now = now
+        self._counters: dict[tuple[int, str], BudgetCounter] = {}
+
+    @staticmethod
+    def _scope_key(rule: BudgetRule, tool: str) -> str:
+        return tool if rule.scope == "per_tool" else ""
+
+    def _counter(self, rule_index: int, rule: BudgetRule, tool: str) -> BudgetCounter:
+        key = (rule_index, self._scope_key(rule, tool))
+        counter = self._counters.get(key)
+        if counter is None:
+            counter = BudgetCounter(
+                rule.per,
+                max_calls=rule.max_calls,
+                max_cost=rule.max_cost,
+                now=self._now,
+            )
+            self._counters[key] = counter
+        return counter
+
+    def peek(self, tool: str, cost: float) -> tuple[bool, str | None]:
+        """Check whether every applicable budget rule allows this call."""
+        for index, rule in enumerate(self._rules):
+            counter = self._counter(index, rule, tool)
+            if not counter.peek(cost):
+                return False, f"over budget '{rule.name}'"
+        return True, None
+
+    def reserve(self, tool: str, cost: float) -> None:
+        """Record one call of ``cost`` against every applicable budget rule."""
+        for index, rule in enumerate(self._rules):
+            self._counter(index, rule, tool).reserve(cost)

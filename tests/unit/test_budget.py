@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import pytest
 
-from bastion.config.schema import CostConfig
-from bastion.policy.budget import BudgetCounter, CostModel
+from bastion.config.schema import BudgetRule, CostConfig
+from bastion.policy.budget import BudgetCounter, BudgetTracker, CostModel
 
 
 class FakeUTC:
@@ -108,3 +109,71 @@ def test_budget_counter_rolls_at_minute_boundary() -> None:
     assert not counter.peek(0.0)
     clock.advance(seconds=61)
     assert counter.peek(0.0)
+
+
+# ------------- BudgetTracker -------------
+
+
+def _rule(
+    name: str,
+    *,
+    scope: Literal["global", "per_tool"] = "global",
+    per: Literal["minute", "hour", "day"] = "day",
+    max_calls: int | None = None,
+    max_cost: float | None = None,
+) -> BudgetRule:
+    return BudgetRule(
+        name=name,
+        scope=scope,
+        per=per,
+        max_calls=max_calls,
+        max_cost=max_cost,
+    )
+
+
+def test_tracker_empty_rules_always_allows() -> None:
+    tracker = BudgetTracker([], now=FakeUTC(_at(2026, 5, 19)))
+    ok, reason = tracker.peek("anything", 1.0)
+    assert ok
+    assert reason is None
+
+
+def test_tracker_global_rule_shares_counter_across_tools() -> None:
+    rules = [_rule("daily-cap", max_calls=2)]
+    tracker = BudgetTracker(rules, now=FakeUTC(_at(2026, 5, 19)))
+    tracker.reserve("a", 0.0)
+    tracker.reserve("b", 0.0)
+    ok, reason = tracker.peek("c", 0.0)
+    assert not ok
+    assert reason is not None and "daily-cap" in reason
+
+
+def test_tracker_per_tool_rule_isolates_counters() -> None:
+    rules = [_rule("per-tool-cap", scope="per_tool", max_calls=1)]
+    tracker = BudgetTracker(rules, now=FakeUTC(_at(2026, 5, 19)))
+    tracker.reserve("a", 0.0)
+    ok_a, _ = tracker.peek("a", 0.0)
+    ok_b, _ = tracker.peek("b", 0.0)
+    assert not ok_a
+    assert ok_b
+
+
+def test_tracker_multiple_rules_must_all_allow() -> None:
+    rules = [
+        _rule("cost-cap", max_cost=1.0),
+        _rule("call-cap", max_calls=10),
+    ]
+    tracker = BudgetTracker(rules, now=FakeUTC(_at(2026, 5, 19)))
+    tracker.reserve("t", 0.9)
+    ok, reason = tracker.peek("t", 0.2)
+    assert not ok
+    assert reason is not None and "cost-cap" in reason
+
+
+def test_tracker_peek_does_not_consume() -> None:
+    rules = [_rule("cap", max_calls=1)]
+    tracker = BudgetTracker(rules, now=FakeUTC(_at(2026, 5, 19)))
+    for _ in range(5):
+        assert tracker.peek("t", 0.0)[0]
+    tracker.reserve("t", 0.0)
+    assert not tracker.peek("t", 0.0)[0]
