@@ -200,3 +200,46 @@ def test_cost_rejects_negative_default() -> None:
         BastionConfig.model_validate(
             {"upstreams": {"a": {"command": "x"}}, "cost": {"default_per_call": -0.01}}
         )
+
+
+def test_budgets_default_to_empty() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.policy.budgets == []
+
+
+def test_budgets_section_parses() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {
+                "budgets": [
+                    {"name": "daily-spend", "scope": "global", "per": "day", "max_cost": 5.0},
+                    {"name": "hourly-calls", "per": "hour", "max_calls": 1000},
+                ]
+            },
+        }
+    )
+    assert len(config.policy.budgets) == 2
+    assert config.policy.budgets[0].name == "daily-spend"
+    assert config.policy.budgets[0].max_cost == 5.0
+    assert config.policy.budgets[1].max_calls == 1000
+
+
+def test_budget_rejects_no_cap() -> None:
+    with pytest.raises(ValidationError, match="max_calls or max_cost"):
+        BastionConfig.model_validate(
+            {
+                "upstreams": {"a": {"command": "x"}},
+                "policy": {"budgets": [{"name": "empty", "per": "day"}]},
+            }
+        )
+
+
+def test_budget_rejects_invalid_window() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {
+                "upstreams": {"a": {"command": "x"}},
+                "policy": {"budgets": [{"name": "x", "per": "week", "max_calls": 1}]},
+            }
+        )
