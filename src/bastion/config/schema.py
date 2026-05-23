@@ -74,6 +74,20 @@ class AuditConfig(BaseModel):
     log_arguments: bool = True
 
 
+class CostConfig(BaseModel):
+    """Per-call cost model used by budget rules.
+
+    Costs are unit-agnostic (typically US dollars). The cost charged for a
+    given tool call is ``per_tool[name]`` if the tool is listed; otherwise
+    ``default_per_call``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_per_call: float = Field(default=0.0, ge=0.0)
+    per_tool: dict[str, float] = Field(default_factory=dict)
+
+
 class PermissionRule(BaseModel):
     """An allow/deny rule matching tool names by glob (e.g. ``files_*``)."""
 
@@ -120,6 +134,7 @@ class BastionConfig(BaseModel):
 
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    cost: CostConfig = Field(default_factory=CostConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     upstreams: dict[str, Upstream] = Field(min_length=1)
 
