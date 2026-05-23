@@ -176,3 +176,27 @@ def test_policy_rejects_invalid_action() -> None:
                 "policy": {"permissions": [{"tool": "x", "action": "maybe"}]},
             }
         )
+
+
+def test_cost_defaults_to_zero() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.cost.default_per_call == 0.0
+    assert config.cost.per_tool == {}
+
+
+def test_cost_section_parses() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "cost": {"default_per_call": 0.001, "per_tool": {"search_web": 0.01}},
+        }
+    )
+    assert config.cost.default_per_call == 0.001
+    assert config.cost.per_tool == {"search_web": 0.01}
+
+
+def test_cost_rejects_negative_default() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {"upstreams": {"a": {"command": "x"}}, "cost": {"default_per_call": -0.01}}
+        )
