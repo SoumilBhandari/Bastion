@@ -76,9 +76,7 @@ def test_budget_counter_blocks_when_cost_would_exceed() -> None:
 
 
 def test_budget_counter_both_caps_apply() -> None:
-    counter = BudgetCounter(
-        "day", max_calls=10, max_cost=1.0, now=FakeUTC(_at(2026, 5, 19))
-    )
+    counter = BudgetCounter("day", max_calls=10, max_cost=1.0, now=FakeUTC(_at(2026, 5, 19)))
     counter.reserve(0.6)
     assert not counter.peek(0.5)  # cost would exceed
     assert counter.peek(0.4)  # cost is fine
