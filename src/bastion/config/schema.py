@@ -151,6 +151,7 @@ class PolicyConfig(BaseModel):
     permissions: list[PermissionRule] = Field(default_factory=list)
     rate_limits: list[RateLimitRule] = Field(default_factory=list)
     budgets: list[BudgetRule] = Field(default_factory=list)
+    budget_checkpoint: Path | None = Path("bastion-budgets.json")
 
 
 class BastionConfig(BaseModel):

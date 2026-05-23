@@ -243,3 +243,28 @@ def test_budget_rejects_invalid_window() -> None:
                 "policy": {"budgets": [{"name": "x", "per": "week", "max_calls": 1}]},
             }
         )
+
+
+def test_budget_checkpoint_default() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.policy.budget_checkpoint == Path("bastion-budgets.json")
+
+
+def test_budget_checkpoint_custom_path() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {"budget_checkpoint": "/var/lib/bastion/budgets.json"},
+        }
+    )
+    assert config.policy.budget_checkpoint == Path("/var/lib/bastion/budgets.json")
+
+
+def test_budget_checkpoint_can_be_disabled() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {"budget_checkpoint": None},
+        }
+    )
+    assert config.policy.budget_checkpoint is None
