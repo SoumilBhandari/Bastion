@@ -268,3 +268,52 @@ def test_budget_checkpoint_can_be_disabled() -> None:
         }
     )
     assert config.policy.budget_checkpoint is None
+
+
+def test_guards_default_to_empty() -> None:
+    config = BastionConfig.model_validate({"upstreams": {"a": {"command": "x"}}})
+    assert config.policy.guards == []
+
+
+def test_guards_section_parses() -> None:
+    config = BastionConfig.model_validate(
+        {
+            "upstreams": {"a": {"command": "x"}},
+            "policy": {
+                "guards": [
+                    {
+                        "name": "no-rm-rf",
+                        "match": "files_*",
+                        "arg": "$.command",
+                        "pattern": r"rm\s+-rf",
+                        "action": "block",
+                    },
+                    {
+                        "name": "redact-tokens",
+                        "arg": "$.headers.Authorization",
+                        "pattern": "Bearer .+",
+                        "action": "redact",
+                    },
+                ]
+            },
+        }
+    )
+    assert len(config.policy.guards) == 2
+    assert config.policy.guards[0].name == "no-rm-rf"
+    assert config.policy.guards[0].action == "block"
+    assert config.policy.guards[1].action == "redact"
+    assert config.policy.guards[1].match == "*"  # default
+
+
+def test_guard_rejects_invalid_action() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {
+                "upstreams": {"a": {"command": "x"}},
+                "policy": {
+                    "guards": [
+                        {"name": "x", "arg": "$.a", "pattern": "y", "action": "warn"}
+                    ]
+                },
+            }
+        )
