@@ -87,3 +87,81 @@ def test_regex_uses_search_semantics() -> None:
     engine = GuardEngine([_guard("no-token", arg="$.body", pattern="TOKEN=")])
     ok, _ = engine.check_blocking("post", {"body": "prefix TOKEN=xyz suffix"})
     assert not ok
+
+
+# ------------- redaction -------------
+
+
+def test_redact_returns_arguments_unchanged_when_no_rules() -> None:
+    engine = GuardEngine([])
+    out = engine.redact("any", {"a": 1, "b": "two"})
+    assert out == {"a": 1, "b": "two"}
+
+
+def test_redact_replaces_matching_value_with_stars() -> None:
+    engine = GuardEngine(
+        [_guard("redact-token", arg="$.token", pattern=".+", action="redact")]
+    )
+    out = engine.redact("auth", {"token": "supersecret", "user": "alice"})
+    assert out == {"token": "***", "user": "alice"}
+
+
+def test_redact_only_replaces_values_matching_pattern() -> None:
+    engine = GuardEngine(
+        [_guard("redact-bearer", arg="$.header", pattern="^Bearer ", action="redact")]
+    )
+    bearer = engine.redact("h", {"header": "Bearer abc"})
+    nonmatch = engine.redact("h", {"header": "Basic abc"})
+    assert bearer == {"header": "***"}
+    assert nonmatch == {"header": "Basic abc"}
+
+
+def test_redact_respects_tool_glob() -> None:
+    engine = GuardEngine(
+        [
+            _guard(
+                "redact-files",
+                match="files_*",
+                arg="$.body",
+                pattern=".+",
+                action="redact",
+            )
+        ]
+    )
+    files = engine.redact("files_write", {"body": "secret"})
+    other = engine.redact("search_web", {"body": "secret"})
+    assert files == {"body": "***"}
+    assert other == {"body": "secret"}
+
+
+def test_redact_follows_nested_jsonpath() -> None:
+    engine = GuardEngine(
+        [
+            _guard(
+                "redact-auth",
+                arg="$.headers.Authorization",
+                pattern="Bearer ",
+                action="redact",
+            )
+        ]
+    )
+    out = engine.redact("fetch", {"headers": {"Authorization": "Bearer xyz", "X": "y"}})
+    assert out == {"headers": {"Authorization": "***", "X": "y"}}
+
+
+def test_redact_does_not_mutate_input() -> None:
+    engine = GuardEngine(
+        [_guard("redact-token", arg="$.token", pattern=".+", action="redact")]
+    )
+    original = {"token": "secret"}
+    _ = engine.redact("auth", original)
+    assert original == {"token": "secret"}
+
+
+def test_block_guards_skipped_by_redact() -> None:
+    """Block guards shouldn't affect the redacted output."""
+    engine = GuardEngine(
+        [_guard("block-bad", arg="$.body", pattern="bad", action="block")]
+    )
+    out = engine.redact("post", {"body": "bad value"})
+    assert out == {"body": "bad value"}
