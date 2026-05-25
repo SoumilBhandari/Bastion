@@ -1,14 +1,16 @@
 # Bastion
 
+[![PyPI](https://img.shields.io/pypi/v/bastion-mcp)](https://pypi.org/project/bastion-mcp/)
+[![CI](https://github.com/SoumilBhandari/Bastion/actions/workflows/ci.yml/badge.svg)](https://github.com/SoumilBhandari/Bastion/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/bastion-mcp)](https://pypi.org/project/bastion-mcp/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **A local-first control plane for your AI agent's tools.** Bastion is a gateway
 that sits between an AI agent (Claude Code, Cursor, Claude Desktop, …) and the
-MCP servers it uses — capping spend, rate-limiting, enforcing per-action
-permissions, and auditing every tool call.
+MCP servers it uses — capping spend, rate-limiting, enforcing per-tool
+permissions, redacting or blocking dangerous arguments, and auditing every call.
 
-> **Status: early development.** Bastion is being built in the open, milestone
-> by milestone. Today it proxies your MCP servers, writes a full audit log of
-> every tool call, and enforces per-tool **permissions**; rate limits, budgets,
-> and argument guards land over the next milestones — see the [roadmap](#roadmap).
+One config file, one command, no cloud, no database.
 
 ## Why
 
@@ -79,33 +81,33 @@ so they never collide.
 
 ## Configuration
 
-`bastion.yaml` — `upstreams` is required; everything else is optional.
+`bastion.yaml` — `upstreams` is required; everything else is optional. A
+small example with permissions and audit:
 
 ```yaml
-gateway:
-  transport: stdio          # stdio | http
-
-upstreams:                  # each key names an upstream MCP server
+upstreams:
   files:
-    command: npx            # `command` ⇒ stdio upstream
+    command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
-  search:
-    url: https://search.example.com/mcp   # `url` ⇒ http upstream
 
-audit:                      # every tool call is logged here (JSON Lines)
+audit:
   enabled: true
   path: ./bastion-audit.jsonl
 
-policy:                     # per-tool allow/deny (most-specific rule wins)
+policy:
   default: allow
   permissions:
     - { tool: "files_read_*",   action: allow }
     - { tool: "files_delete_*", action: deny  }
 ```
 
-A denied call is blocked before it reaches the upstream and recorded in the
-audit log. The `cost` section (budgets) is documented as it lands — see the
-roadmap below.
+A denied call is blocked before reaching the upstream and recorded in the
+audit log. Rate limits, budgets (call-count and cost), and argument guards
+(block or redact) layer onto the same `policy` section.
+
+See **[`docs/configuration.md`](docs/configuration.md)** for the full reference
+of every section, and **[`examples/`](examples/)** for runnable starter
+configurations.
 
 ## Dashboard
 
@@ -116,20 +118,19 @@ live, with arguments, outcomes, and timings:
 bastion dashboard --config bastion.yaml   # then open http://127.0.0.1:8787
 ```
 
-## Roadmap
+## Milestones
 
-Bastion is built in milestones; each adds one capability. The first PyPI release
-comes early — right after permissions — and every milestone after ships a release.
+Bastion shipped one feature per release, milestone by milestone:
 
 - [x] **M0** — multi-upstream proxy (stdio + HTTP), config schema, CLI
 - [x] **M1** — audit log: every tool call recorded to JSONL
 - [x] **M2** — permissions: per-tool allow/deny rules
-- [ ] **M3** — first PyPI release (`pip install bastion`)
-- [ ] **M4** — rate limiting: per-tool / per-client / global token buckets
-- [ ] **M5** — budgets: call-count and cost caps that survive restarts
-- [ ] **M6** — argument guards: block dangerous tool arguments
-- [ ] **M7** — live log viewer (`bastion tail`) and CLI polish
-- [ ] **M8** — docs, examples, `v1.0.0`
+- [x] **M3** — first PyPI release (`pip install bastion-mcp`)
+- [x] **M4** — rate limiting: per-tool and global token buckets
+- [x] **M5** — budgets: call-count and cost caps with on-disk checkpoint
+- [x] **M6** — argument guards: regex-on-JSONPath, block or redact
+- [x] **M7** — live log viewer (`bastion tail/logs/stats/init`) + Windows CI
+- [x] **M8** — docs, examples, `v1.0.0` 🎉
 
 ## Contributing
 
