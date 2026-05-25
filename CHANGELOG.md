@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `examples/full/`: a runnable example showing every policy feature together —
+  permissions, rate limits, budgets, argument guards — with audit and cost on.
+
+### Changed
+
+- README polished for the 1.0 release: PyPI / CI / Python / license badges,
+  links into `docs/configuration.md` and `examples/`, milestones fully marked
+  complete.
+- PyPI Development Status classifier graduated from `3 - Alpha` to
+  `5 - Production/Stable`.
+
 ## [0.4.0] - 2026-05-25
 
 ### Added
