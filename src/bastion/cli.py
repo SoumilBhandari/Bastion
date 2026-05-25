@@ -7,11 +7,13 @@ from typing import Annotated
 import typer
 
 from bastion import __version__
-from bastion.audit import read_records
+from rich.console import Console
+
+from bastion.audit import read_records, tail_records
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
 from bastion.dashboard import run_dashboard
 from bastion.gateway import build_gateway
-from bastion.viewer import render_records_table, render_stats
+from bastion.viewer import format_record_line, render_records_table, render_stats
 
 app = typer.Typer(
     name="bastion",
@@ -116,6 +118,19 @@ def logs(
     if limit and limit > 0:
         records = records[-limit:]
     render_records_table(records)
+
+
+@app.command()
+def tail(config: ConfigOption = None) -> None:
+    """Follow the audit log, printing new records as they're recorded (Ctrl+C to exit)."""
+    cfg = _load(config)
+    console = Console()
+    console.print(f"[dim]tailing {cfg.audit.path} (Ctrl+C to exit)[/dim]")
+    try:
+        for record in tail_records(cfg.audit.path):
+            console.print(format_record_line(record))
+    except KeyboardInterrupt:
+        console.print("\n[dim]stopped[/dim]")
 
 
 @app.command()

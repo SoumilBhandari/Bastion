@@ -129,3 +129,21 @@ def test_stats_with_no_records(tmp_path: Path) -> None:
     result = runner.invoke(app, ["stats", "--config", str(config)])
     assert result.exit_code == 0
     assert "no audit records" in result.output
+
+
+def test_tail_prints_streamed_records(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """`bastion tail` uses tail_records to stream new records; verify with a fake stream."""
+    config = _write_config(tmp_path)
+
+    def fake_stream(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        yield {
+            "tool": "streamed",
+            "outcome": "ok",
+            "duration_ms": 1.0,
+            "timestamp": "2026-05-25T10:00:00Z",
+        }
+
+    monkeypatch.setattr("bastion.cli.tail_records", fake_stream)
+    result = runner.invoke(app, ["tail", "--config", str(config)])
+    assert result.exit_code == 0
+    assert "streamed" in result.output
