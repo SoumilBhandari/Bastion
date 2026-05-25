@@ -8,6 +8,7 @@ from typing import Any
 from rich.console import Console
 
 from bastion.viewer.render import (
+    format_record_line,
     render_records_table,
     render_stats,
     shorten_timestamp,
@@ -77,3 +78,31 @@ def test_render_stats_includes_totals_and_top_tools() -> None:
     assert "4 audit records" in output
     assert "echo" in output and "3" in output  # echo appeared 3x
     assert "delete" in output and "denied" in output
+
+
+def test_format_record_line_includes_key_fields() -> None:
+    line = format_record_line(
+        {
+            "timestamp": "2026-05-25T14:30:45.123Z",
+            "tool": "echo",
+            "outcome": "ok",
+            "duration_ms": 1.5,
+        }
+    )
+    assert "14:30:45" in line
+    assert "echo" in line
+    assert "1.5ms" in line
+
+
+def test_format_record_line_includes_error_when_present() -> None:
+    line = format_record_line(
+        {
+            "timestamp": "2026-05-25T14:30:45Z",
+            "tool": "boom",
+            "outcome": "error",
+            "duration_ms": 0.1,
+            "error": "kaboom",
+        }
+    )
+    assert "boom" in line
+    assert "kaboom" in line

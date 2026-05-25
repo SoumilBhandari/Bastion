@@ -52,6 +52,17 @@ def render_records_table(
     console.print(table)
 
 
+def format_record_line(record: dict[str, Any]) -> str:
+    """Format one audit record as a single rich-styled line for streaming output."""
+    ts = shorten_timestamp(str(record.get("timestamp", "")))
+    tool = str(record.get("tool", ""))
+    outcome = style_outcome(str(record.get("outcome", "")))
+    duration = f"{float(record.get('duration_ms', 0)):.1f}ms"
+    err = record.get("error")
+    err_part = f" [red]{err}[/red]" if err else ""
+    return f"[dim]{ts}[/dim] {outcome} {tool} {duration}{err_part}"
+
+
 def render_stats(
     records: Sequence[dict[str, Any]],
     console: Console | None = None,
