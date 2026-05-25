@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -33,3 +34,51 @@ def iter_records(path: Path) -> Iterator[dict[str, Any]]:
 def read_records(path: Path) -> list[dict[str, Any]]:
     """Read all audit records from a JSON Lines file into memory."""
     return list(iter_records(path))
+
+
+def tail_records(
+    path: Path,
+    *,
+    poll_interval: float = 0.5,
+    sleep: Callable[[float], None] = time.sleep,
+    should_stop: Callable[[], bool] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Follow an audit-log file like ``tail -f``, yielding records as they're appended.
+
+    Starts at the current end of file (so existing records are not replayed).
+    If the file does not yet exist, waits for it. Polls every ``poll_interval``
+    seconds; ``sleep`` and ``should_stop`` are injectable for tests.
+    """
+    while not path.exists():
+        if should_stop and should_stop():
+            return
+        sleep(poll_interval)
+
+    position = path.stat().st_size
+    buffer = ""
+    while True:
+        if should_stop and should_stop():
+            return
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                handle.seek(position)
+                chunk = handle.read()
+                position = handle.tell()
+        except FileNotFoundError:
+            sleep(poll_interval)
+            continue
+        if not chunk:
+            sleep(poll_interval)
+            continue
+        buffer += chunk
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                value = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                yield value

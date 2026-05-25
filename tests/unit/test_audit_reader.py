@@ -69,3 +69,62 @@ def test_iter_records_is_lazy(tmp_path: Path) -> None:
         if len(first_three) == 3:
             break
     assert first_three == ["t0", "t1", "t2"]
+
+
+# ------------- tail_records -------------
+
+
+def test_tail_records_emits_new_appends(tmp_path: Path) -> None:
+    from bastion.audit import tail_records
+
+    log = tmp_path / "audit.jsonl"
+    log.write_text('{"tool":"old","outcome":"ok"}\n', encoding="utf-8")
+
+    seen: list[str] = []
+    appended = [False]
+
+    def fake_sleep(_: float) -> None:
+        if not appended[0]:
+            with log.open("a", encoding="utf-8") as h:
+                h.write('{"tool":"new","outcome":"ok"}\n')
+            appended[0] = True
+
+    def stop_after_one() -> bool:
+        return len(seen) >= 1
+
+    for record in tail_records(log, sleep=fake_sleep, should_stop=stop_after_one):
+        seen.append(record["tool"])
+
+    assert seen == ["new"]
+
+
+def test_tail_records_waits_for_file_to_exist(tmp_path: Path) -> None:
+    from bastion.audit import tail_records
+
+    log = tmp_path / "audit.jsonl"  # does not exist yet
+    seen: list[str] = []
+    created = [False]
+
+    def fake_sleep(_: float) -> None:
+        if not created[0]:
+            log.write_text("", encoding="utf-8")
+            created[0] = True
+        elif len(seen) == 0:
+            with log.open("a", encoding="utf-8") as h:
+                h.write('{"tool":"hello","outcome":"ok"}\n')
+
+    def stop_when_seen() -> bool:
+        return len(seen) >= 1
+
+    for record in tail_records(log, sleep=fake_sleep, should_stop=stop_when_seen):
+        seen.append(record["tool"])
+
+    assert seen == ["hello"]
+
+
+def test_tail_records_respects_should_stop_immediately(tmp_path: Path) -> None:
+    from bastion.audit import tail_records
+
+    log = tmp_path / "audit.jsonl"
+    log.write_text("", encoding="utf-8")
+    assert list(tail_records(log, sleep=lambda _: None, should_stop=lambda: True)) == []
