@@ -147,3 +147,34 @@ def test_tail_prints_streamed_records(tmp_path: Path, monkeypatch) -> None:  # t
     result = runner.invoke(app, ["tail", "--config", str(config)])
     assert result.exit_code == 0
     assert "streamed" in result.output
+
+
+def test_init_creates_starter_config(tmp_path: Path) -> None:
+    import yaml
+
+    from bastion.config.schema import BastionConfig
+
+    target = tmp_path / "bastion.yaml"
+    result = runner.invoke(app, ["init", "--path", str(target)])
+    assert result.exit_code == 0
+    assert "wrote" in result.output
+    assert target.exists()
+    # The generated config is itself a valid Bastion config
+    BastionConfig.model_validate(yaml.safe_load(target.read_text(encoding="utf-8")))
+
+
+def test_init_refuses_to_overwrite_existing(tmp_path: Path) -> None:
+    target = tmp_path / "bastion.yaml"
+    target.write_text("# existing", encoding="utf-8")
+    result = runner.invoke(app, ["init", "--path", str(target)])
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+    assert target.read_text(encoding="utf-8") == "# existing"
+
+
+def test_init_force_overwrites(tmp_path: Path) -> None:
+    target = tmp_path / "bastion.yaml"
+    target.write_text("# old", encoding="utf-8")
+    result = runner.invoke(app, ["init", "--path", str(target), "--force"])
+    assert result.exit_code == 0
+    assert "# old" not in target.read_text(encoding="utf-8")

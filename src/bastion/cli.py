@@ -132,6 +132,46 @@ def tail(config: ConfigOption = None) -> None:
         console.print("\n[dim]stopped[/dim]")
 
 
+STARTER_CONFIG = """\
+# Bastion configuration. Run with:  bastion run
+#
+# See docs/configuration.md and examples/ for reference and more involved configs.
+
+upstreams:
+  files:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+
+audit:
+  enabled: true
+  path: ./bastion-audit.jsonl
+
+policy:
+  default: allow
+  permissions:
+    # Most-specific rule wins; broader rules come first.
+    - { tool: "files_read_*",   action: allow }
+    - { tool: "files_delete_*", action: deny  }
+"""
+
+
+@app.command()
+def init(
+    path: Annotated[
+        Path, typer.Option(help="Where to write the new config.")
+    ] = Path("bastion.yaml"),
+    force: Annotated[
+        bool, typer.Option(help="Overwrite if the file already exists.")
+    ] = False,
+) -> None:
+    """Scaffold a starter bastion.yaml."""
+    if path.exists() and not force:
+        typer.echo(f"error: {path} already exists (use --force to overwrite)", err=True)
+        raise typer.Exit(code=1)
+    path.write_text(STARTER_CONFIG, encoding="utf-8")
+    typer.echo(f"wrote {path}")
+
+
 @app.command()
 def stats(config: ConfigOption = None) -> None:
     """Print a summary of the audit log: totals, outcomes, and top tools."""
