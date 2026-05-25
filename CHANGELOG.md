@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-25
+
+### Added
+
+- New CLI commands powered by an audit-log reader:
+  - `bastion logs` — show past audit records with optional `--tool` glob,
+    `--outcome` filter, and `-n/--limit` for the last N records.
+  - `bastion stats` — summarise the audit log: total calls, outcomes, top tools.
+  - `bastion tail` — follow the audit log, streaming new records as they're
+    recorded (Ctrl+C to exit).
+  - `bastion init` — scaffold a starter `bastion.yaml` (refuses to overwrite
+    unless `--force`).
+- `docs/configuration.md`: a full reference for every `bastion.yaml` section.
+- `examples/permissions/`: a runnable example showing the per-tool allow/deny
+  pattern (most-specific glob wins) with audit enabled.
+- CI now also runs on Windows (Python 3.12) alongside the Ubuntu 3.11/3.12/3.13
+  matrix.
+
 ## [0.3.0] - 2026-05-25
 
 ### Added
