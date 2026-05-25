@@ -1,0 +1,33 @@
+# Bastion configuration with permission rules: a default-allow gateway that
+# explicitly blocks destructive filesystem operations.
+#
+# Run the gateway with:
+#   bastion run --config examples/permissions/bastion.yaml
+#
+# Try it: a `files_read_*` or `files_list_*` call goes through, but a
+# `files_delete_*`, `files_move_*`, or `files_write_*` call is blocked
+# before reaching the upstream and recorded in `./bastion-audit.jsonl`
+# with `outcome: denied` and the rule that fired in `error`.
+
+upstreams:
+  files:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+
+audit:
+  enabled: true
+  path: ./bastion-audit.jsonl
+
+policy:
+  # The default applies when no rule matches; specific rules below override it.
+  default: allow
+
+  # The most specific glob wins; ties break by definition order. So broader
+  # `files_*` rules sit alongside narrower `files_delete_*` rules and the
+  # delete rule wins for delete calls.
+  permissions:
+    - { tool: "files_read_*",   action: allow }
+    - { tool: "files_list_*",   action: allow }
+    - { tool: "files_delete_*", action: deny  }
+    - { tool: "files_move_*",   action: deny  }
+    - { tool: "files_write_*",  action: deny  }
