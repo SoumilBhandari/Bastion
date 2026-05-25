@@ -250,3 +250,62 @@ async def test_gateway_budget_survives_a_restart(
     async with Client(gateway2) as client:
         with pytest.raises(ToolError):
             await client.call_tool("echo", {"text": "3"})
+
+
+async def test_gateway_blocks_call_when_guard_matches(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """A blocking argument guard stops the call and records the denial."""
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        audit_path=audit_log,
+        policy={
+            "guards": [
+                {
+                    "name": "no-secret-text",
+                    "arg": "$.text",
+                    "pattern": "SECRET",
+                    "action": "block",
+                }
+            ]
+        },
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        result = await client.call_tool("echo", {"text": "hello"})
+        assert result.data == "hello"
+        with pytest.raises(ToolError):
+            await client.call_tool("echo", {"text": "SECRET payload"})
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert [r["outcome"] for r in records] == ["ok", "denied"]
+    assert "no-secret-text" in records[1]["error"]
+
+
+async def test_gateway_redacts_arguments_in_audit_log(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """A redact guard replaces matching arg values in the audit log but lets the call proceed."""
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        audit_path=audit_log,
+        policy={
+            "guards": [
+                {
+                    "name": "redact-secret",
+                    "arg": "$.text",
+                    "pattern": "secret",
+                    "action": "redact",
+                }
+            ]
+        },
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        result = await client.call_tool("echo", {"text": "a secret payload"})
+        # The tool still ran with the real argument
+        assert result.data == "a secret payload"
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["arguments"] == {"text": "***"}
+    assert records[0]["outcome"] == "ok"

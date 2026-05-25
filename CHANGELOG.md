@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-25
+
+### Added
+
+- Argument guards: a `policy.guards` config section with regex-on-JSONPath
+  rules that operate on tool-call arguments. Each rule has a `name`, a glob
+  `match` for which tools it applies to (defaults to `*`), a JSONPath `arg`,
+  a regex `pattern`, and an `action` of either `block` (raise a policy denial
+  before the upstream sees the call, recorded as `denied` in the audit log
+  with the rule name in `error`) or `redact` (replace the matched value with
+  `***` in the audit log only, leaving the actual call unchanged).
+
 ## [0.2.0] - 2026-05-19
 
 ### Added
