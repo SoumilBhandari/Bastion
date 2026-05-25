@@ -138,6 +138,26 @@ class BudgetRule(BaseModel):
         return self
 
 
+class GuardRule(BaseModel):
+    """A guard rule applied to a tool call's arguments.
+
+    Each rule has a glob ``match`` for which tools it applies to, a JSONPath
+    ``arg`` pointing into the arguments dict, and a regex ``pattern`` tested
+    against the value(s) at that path. ``action`` decides what happens on a
+    match: ``block`` raises a policy denial; ``redact`` replaces the matched
+    value with ``***`` in the audit log only (the underlying call is unchanged).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    match: str = "*"
+    type: Literal["regex"] = "regex"
+    arg: str = Field(min_length=1)
+    pattern: str = Field(min_length=1)
+    action: Literal["block", "redact"] = "block"
+
+
 class PolicyConfig(BaseModel):
     """Policy enforced on every tool call.
 
@@ -152,6 +172,7 @@ class PolicyConfig(BaseModel):
     rate_limits: list[RateLimitRule] = Field(default_factory=list)
     budgets: list[BudgetRule] = Field(default_factory=list)
     budget_checkpoint: Path | None = Path("bastion-budgets.json")
+    guards: list[GuardRule] = Field(default_factory=list)
 
 
 class BastionConfig(BaseModel):
