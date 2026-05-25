@@ -68,9 +68,7 @@ class PolicyEngine:
         if arguments is not None:
             ok, reason = self._guards.check_blocking(tool, arguments)
             if not ok:
-                return PolicyDecision(
-                    allowed=False, reason=reason or "blocked by guard"
-                )
+                return PolicyDecision(allowed=False, reason=reason or "blocked by guard")
         ok, reason = self._rate_limiter.peek(tool)
         if not ok:
             return PolicyDecision(allowed=False, reason=reason or "rate-limited")
@@ -89,8 +87,6 @@ class PolicyEngine:
         cost = self._cost_model.cost_for(tool)
         self._budgets.reserve(tool, cost)
 
-    def redact_arguments(
-        self, tool: str, arguments: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    def redact_arguments(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
         """Apply every ``action='redact'`` guard and return a redacted copy."""
         return self._guards.redact(tool, arguments)
