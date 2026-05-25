@@ -157,12 +157,10 @@ policy:
 
 @app.command()
 def init(
-    path: Annotated[
-        Path, typer.Option(help="Where to write the new config.")
-    ] = Path("bastion.yaml"),
-    force: Annotated[
-        bool, typer.Option(help="Overwrite if the file already exists.")
-    ] = False,
+    path: Annotated[Path, typer.Option(help="Where to write the new config.")] = Path(
+        "bastion.yaml"
+    ),
+    force: Annotated[bool, typer.Option(help="Overwrite if the file already exists.")] = False,
 ) -> None:
     """Scaffold a starter bastion.yaml."""
     if path.exists() and not force:
