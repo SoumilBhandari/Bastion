@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `docs/configuration.md`: a full reference for every `bastion.yaml` section.
+- `examples/permissions/`: a runnable example showing the per-tool allow/deny
+  pattern (most-specific glob wins) with audit enabled.
+
 ## [0.3.0] - 2026-05-25
 
 ### Added
