@@ -41,9 +41,7 @@ def test_block_guard_allows_non_matching_value() -> None:
 
 
 def test_tool_glob_scopes_a_guard() -> None:
-    engine = GuardEngine(
-        [_guard("files-only", match="files_*", arg="$.path", pattern="secret")]
-    )
+    engine = GuardEngine([_guard("files-only", match="files_*", arg="$.path", pattern="secret")])
     ok, _ = engine.check_blocking("search_web", {"path": "secret-stuff"})
     assert ok  # tool doesn't match the glob
     ok2, reason = engine.check_blocking("files_read", {"path": "secret-stuff"})
@@ -52,30 +50,22 @@ def test_tool_glob_scopes_a_guard() -> None:
 
 
 def test_guard_follows_nested_jsonpath() -> None:
-    engine = GuardEngine(
-        [_guard("no-bearer", arg="$.headers.Authorization", pattern="Bearer ")]
-    )
-    ok, reason = engine.check_blocking(
-        "fetch", {"headers": {"Authorization": "Bearer abc.def"}}
-    )
+    engine = GuardEngine([_guard("no-bearer", arg="$.headers.Authorization", pattern="Bearer ")])
+    ok, reason = engine.check_blocking("fetch", {"headers": {"Authorization": "Bearer abc.def"}})
     assert not ok
     assert reason is not None and "no-bearer" in reason
 
 
 def test_guard_missing_arg_path_does_not_block() -> None:
     """When the JSONPath finds nothing, the guard cannot fire."""
-    engine = GuardEngine(
-        [_guard("no-bearer", arg="$.headers.Authorization", pattern="Bearer ")]
-    )
+    engine = GuardEngine([_guard("no-bearer", arg="$.headers.Authorization", pattern="Bearer ")])
     ok, _ = engine.check_blocking("fetch", {"headers": {}})
     assert ok
 
 
 def test_redact_guards_are_skipped_by_block_check() -> None:
     """Guards with action='redact' shouldn't block the call."""
-    engine = GuardEngine(
-        [_guard("redact-token", arg="$.token", pattern=".+", action="redact")]
-    )
+    engine = GuardEngine([_guard("redact-token", arg="$.token", pattern=".+", action="redact")])
     ok, _ = engine.check_blocking("auth", {"token": "supersecret"})
     assert ok
 
