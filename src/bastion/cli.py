@@ -1,14 +1,17 @@
 """The bastion command-line interface."""
 
+import fnmatch
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from bastion import __version__
+from bastion.audit import read_records
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
 from bastion.dashboard import run_dashboard
 from bastion.gateway import build_gateway
+from bastion.viewer import render_records_table
 
 app = typer.Typer(
     name="bastion",
@@ -85,6 +88,34 @@ def validate(config: ConfigOption = None) -> None:
     count = len(cfg.upstreams)
     plural = "" if count == 1 else "s"
     typer.echo(f"OK - configuration is valid ({count} upstream{plural}).")
+
+
+@app.command()
+def logs(
+    config: ConfigOption = None,
+    tool: Annotated[
+        str | None,
+        typer.Option(help="Only show records for tools matching this glob."),
+    ] = None,
+    outcome: Annotated[
+        str | None,
+        typer.Option(help="Only show records with this outcome (ok/error/denied)."),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("-n", "--limit", help="Show only the last N records."),
+    ] = None,
+) -> None:
+    """Show past audit-log records (most recent last)."""
+    cfg = _load(config)
+    records = read_records(cfg.audit.path)
+    if tool:
+        records = [r for r in records if fnmatch.fnmatch(str(r.get("tool", "")), tool)]
+    if outcome:
+        records = [r for r in records if r.get("outcome") == outcome]
+    if limit and limit > 0:
+        records = records[-limit:]
+    render_records_table(records)
 
 
 @app.command()
