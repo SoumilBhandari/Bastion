@@ -53,8 +53,15 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
     """
     gateway = create_proxy(build_mcp_config(config), name=GATEWAY_NAME)
     gateway.add_middleware(ErrorBoundary())
+    engine = PolicyEngine(config.policy, cost=config.cost)
     if config.audit.enabled:
         writer = AuditWriter(config.audit.path)
-        gateway.add_middleware(AuditMiddleware(writer, log_arguments=config.audit.log_arguments))
-    gateway.add_middleware(PolicyMiddleware(PolicyEngine(config.policy, cost=config.cost)))
+        gateway.add_middleware(
+            AuditMiddleware(
+                writer,
+                log_arguments=config.audit.log_arguments,
+                redact_fn=engine.redact_arguments,
+            )
+        )
+    gateway.add_middleware(PolicyMiddleware(engine))
     return gateway
