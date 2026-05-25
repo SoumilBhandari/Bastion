@@ -311,9 +311,7 @@ def test_guard_rejects_invalid_action() -> None:
             {
                 "upstreams": {"a": {"command": "x"}},
                 "policy": {
-                    "guards": [
-                        {"name": "x", "arg": "$.a", "pattern": "y", "action": "warn"}
-                    ]
+                    "guards": [{"name": "x", "arg": "$.a", "pattern": "y", "action": "warn"}]
                 },
             }
         )
