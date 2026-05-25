@@ -104,3 +104,28 @@ def test_logs_with_no_records(tmp_path: Path) -> None:
     result = runner.invoke(app, ["logs", "--config", str(config)])
     assert result.exit_code == 0
     assert "no audit records" in result.output
+
+
+def test_stats_summarizes_records(tmp_path: Path) -> None:
+    audit = tmp_path / "audit.jsonl"
+    config = _write_config(tmp_path, audit_path=audit)
+    _seed_audit(
+        audit,
+        [
+            {"tool": "echo", "outcome": "ok", "duration_ms": 1.0},
+            {"tool": "echo", "outcome": "ok", "duration_ms": 2.0},
+            {"tool": "delete", "outcome": "denied", "duration_ms": 0.5},
+        ],
+    )
+    result = runner.invoke(app, ["stats", "--config", str(config)])
+    assert result.exit_code == 0
+    assert "3 audit records" in result.output
+    assert "echo" in result.output
+    assert "delete" in result.output
+
+
+def test_stats_with_no_records(tmp_path: Path) -> None:
+    config = _write_config(tmp_path)
+    result = runner.invoke(app, ["stats", "--config", str(config)])
+    assert result.exit_code == 0
+    assert "no audit records" in result.output

@@ -11,7 +11,7 @@ from bastion.audit import read_records
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
 from bastion.dashboard import run_dashboard
 from bastion.gateway import build_gateway
-from bastion.viewer import render_records_table
+from bastion.viewer import render_records_table, render_stats
 
 app = typer.Typer(
     name="bastion",
@@ -116,6 +116,14 @@ def logs(
     if limit and limit > 0:
         records = records[-limit:]
     render_records_table(records)
+
+
+@app.command()
+def stats(config: ConfigOption = None) -> None:
+    """Print a summary of the audit log: totals, outcomes, and top tools."""
+    cfg = _load(config)
+    records = read_records(cfg.audit.path)
+    render_stats(records)
 
 
 @app.command()
