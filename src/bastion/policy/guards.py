@@ -43,9 +43,7 @@ class GuardEngine:
     def __init__(self, rules: list[GuardRule]) -> None:
         self._guards = [_CompiledGuard(rule) for rule in rules]
 
-    def check_blocking(
-        self, tool: str, arguments: Mapping[str, Any]
-    ) -> tuple[bool, str | None]:
+    def check_blocking(self, tool: str, arguments: Mapping[str, Any]) -> tuple[bool, str | None]:
         """Check whether any ``action='block'`` guard matches the arguments.
 
         Returns ``(True, None)`` if no blocking guard fires, otherwise
