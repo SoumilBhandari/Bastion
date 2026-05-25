@@ -27,7 +27,8 @@ class PolicyMiddleware(Middleware):
         call_next: CallNext[CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         tool = context.message.name
-        decision = self._engine.check(tool)
+        arguments = dict(context.message.arguments) if context.message.arguments else {}
+        decision = self._engine.check(tool, arguments)
         if not decision.allowed:
             raise PolicyDenied(f"blocked by Bastion policy: {decision.reason}")
         self._engine.reserve(tool)
