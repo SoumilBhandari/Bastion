@@ -48,8 +48,19 @@ def test_logs_shows_records(tmp_path: Path) -> None:
     _seed_audit(
         audit,
         [
-            {"tool": "alpha", "outcome": "ok", "duration_ms": 1.5, "timestamp": "2026-05-25T10:00:00Z"},
-            {"tool": "beta", "outcome": "denied", "duration_ms": 0.5, "timestamp": "2026-05-25T10:00:01Z", "error": "boom"},
+            {
+                "tool": "alpha",
+                "outcome": "ok",
+                "duration_ms": 1.5,
+                "timestamp": "2026-05-25T10:00:00Z",
+            },
+            {
+                "tool": "beta",
+                "outcome": "denied",
+                "duration_ms": 0.5,
+                "timestamp": "2026-05-25T10:00:01Z",
+                "error": "boom",
+            },
         ],
     )
     result = runner.invoke(app, ["logs", "--config", str(config)])
