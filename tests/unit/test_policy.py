@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from bastion.config.schema import (
     BudgetRule,
     CostConfig,
+    GuardRule,
     PermissionRule,
     PolicyConfig,
     RateLimitRule,
@@ -189,5 +190,49 @@ def test_engine_permission_deny_takes_precedence_over_budget() -> None:
     engine = PolicyEngine(config, now=_FakeUTC(_utc(2026, 5, 19)))
 
     decision = engine.check("blocked")
+    assert not decision.allowed
+    assert "default" in decision.reason
+
+
+# ------------- guard integration -------------
+
+
+def test_engine_blocks_when_guard_matches() -> None:
+    config = PolicyConfig(
+        guards=[GuardRule(name="no-rm-rf", arg="$.command", pattern=r"rm\s+-rf")],
+    )
+    engine = PolicyEngine(config)
+
+    assert engine.check("shell", {"command": "ls -la"}).allowed
+    decision = engine.check("shell", {"command": "rm -rf /"})
+    assert not decision.allowed
+    assert "no-rm-rf" in decision.reason
+
+
+def test_engine_check_without_arguments_skips_guards() -> None:
+    """Calling check(tool) with no arguments skips guard evaluation."""
+    config = PolicyConfig(
+        guards=[GuardRule(name="any", arg="$.x", pattern=".*")],
+    )
+    engine = PolicyEngine(config)
+    assert engine.check("any-tool").allowed
+
+
+def test_engine_redact_arguments_delegates_to_guard_engine() -> None:
+    config = PolicyConfig(
+        guards=[GuardRule(name="redact", arg="$.token", pattern=".+", action="redact")],
+    )
+    engine = PolicyEngine(config)
+    redacted = engine.redact_arguments("auth", {"token": "secret", "user": "a"})
+    assert redacted == {"token": "***", "user": "a"}
+
+
+def test_engine_permission_deny_takes_precedence_over_guard() -> None:
+    config = PolicyConfig(
+        default="deny",
+        guards=[GuardRule(name="x", arg="$.y", pattern=".+")],
+    )
+    engine = PolicyEngine(config)
+    decision = engine.check("blocked", {"y": "anything"})
     assert not decision.allowed
     assert "default" in decision.reason
