@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-
-from bastion import __version__
 from rich.console import Console
 
+from bastion import __version__
 from bastion.audit import read_records, tail_records
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
 from bastion.dashboard import run_dashboard
