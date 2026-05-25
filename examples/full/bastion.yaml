@@ -1,0 +1,56 @@
+# Bastion configuration showcasing the full policy surface:
+# permissions + rate limits + budgets + argument guards, with audit on.
+#
+# Run with:  bastion run --config examples/full/bastion.yaml
+#
+# Then experiment with `bastion logs`, `bastion stats`, and `bastion tail`
+# in a second terminal to see what's getting recorded.
+
+upstreams:
+  files:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+
+audit:
+  enabled: true
+  path: ./bastion-audit.jsonl
+
+cost:
+  default_per_call: 0.0
+  per_tool:
+    # Imagine a paid search API charged per call (units are unit-agnostic;
+    # treat them as whatever currency the budget caps below are denominated in).
+    search_web: 0.01
+
+policy:
+  default: allow
+
+  # Permission rules — most specific wins.
+  permissions:
+    - { tool: "files_delete_*", action: deny }
+    - { tool: "files_move_*",   action: deny }
+
+  # Token-bucket rate limits.
+  rate_limits:
+    - { name: global-cap, scope: global,   max_per_minute: 120, burst: 30 }
+    - { name: per-tool,   scope: per_tool, max_per_minute: 60 }
+
+  # Windowed budgets — call counts and cost caps. Counters are persisted to
+  # `budget_checkpoint` so caps survive restarts.
+  budgets:
+    - { name: hourly-calls, scope: global, per: hour, max_calls: 1000 }
+    - { name: daily-spend,  scope: global, per: day,  max_cost: 5.00 }
+  budget_checkpoint: ./bastion-budgets.json
+
+  # Argument guards — regex on JSONPath. `block` denies the call; `redact`
+  # masks the matched value in the audit log only (the call still proceeds).
+  guards:
+    - name: redact-bearer
+      arg: "$.headers.Authorization"
+      pattern: "^Bearer "
+      action: redact
+    - name: no-rm-rf
+      match: "shell_*"
+      arg: "$.command"
+      pattern: 'rm\s+-rf'
+      action: block
