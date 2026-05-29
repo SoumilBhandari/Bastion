@@ -42,6 +42,25 @@ tool arguments. A pathological pattern combined with attacker-influenced argumen
 values could backtrack slowly. Since the config is authored by the operator, keep
 guard patterns simple and anchored.
 
+## Matching is case-sensitive
+
+Permission globs, guard `match` globs, and guard `pattern` regexes are
+case-sensitive. A rule for `files_delete_*` won't match `Files_Delete_x`, and a
+pattern `rm` won't match `RM`. (MCP tool dispatch is itself case-sensitive, so a
+mis-cased name fails as an unknown tool rather than slipping past a deny rule —
+but match your rules to the exact names the upstream exposes, and use `(?i)` in a
+guard pattern where case shouldn't matter.) Guards also inspect structured
+arguments: a list value is matched element-by-element and as a space-joined
+command line, so an argv array like `["rm", "-rf", "/"]` can't smuggle a command
+past a string pattern.
+
+## Budgets reset on fixed windows
+
+Budget windows are fixed (calendar minute/hour/day in UTC), not sliding. Near a
+boundary an agent can spend up to a full window's budget just before the reset
+and again just after — roughly 2× over a short span. Size caps with that in
+mind, or use a shorter window for tighter control.
+
 ## Reporting a vulnerability
 
 See [SECURITY.md](../SECURITY.md).
