@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `bastion --version` / `bastion version` reported a stale hardcoded `0.1.0`;
+  the version now derives from installed package metadata so it tracks
+  `pyproject.toml` and can't drift.
+- Guard rules with an invalid regex `pattern` or JSONPath `arg` are now caught
+  by `bastion validate` with a clear message, instead of passing validation and
+  crashing at `bastion run`.
+- A corrupt or hand-edited budget checkpoint no longer crashes gateway startup:
+  an unreadable file starts fresh and individual malformed entries are skipped.
+- `.gitignore` now covers the budget checkpoint (`bastion-budgets.json`).
+
+### Security
+
+- `bastion dashboard` and the HTTP gateway now warn when bound to a non-loopback
+  host, since neither is authenticated.
+- Added `docs/security.md` documenting the operational security model (secrets
+  in the audit log, unauthenticated surfaces, operator-trusted guard regexes).
+
 ## [1.0.0] - 2026-05-25
 
 ### Added
