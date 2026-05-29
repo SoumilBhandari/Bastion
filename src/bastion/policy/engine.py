@@ -87,6 +87,15 @@ class PolicyEngine:
         cost = self._cost_model.cost_for(tool)
         self._budgets.reserve(tool, cost)
 
+    def check_permission(self, subject: str) -> PolicyDecision:
+        """Permission-only decision for non-tool operations (resource URIs, prompt names).
+
+        Resources and prompts are matched against the same ``permissions`` rules
+        and ``default`` as tools, so a default-deny policy denies them too and
+        they can be allow/deny-listed by URI or name.
+        """
+        return self._permissions.check(subject)
+
     def redact_arguments(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
         """Apply every ``action='redact'`` guard and return a redacted copy."""
         return self._guards.redact(tool, arguments)
