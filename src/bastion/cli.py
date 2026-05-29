@@ -57,6 +57,19 @@ def _load(config: Path | None) -> BastionConfig:
         raise typer.Exit(code=1) from exc
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _warn_if_exposed(host: str, what: str) -> None:
+    """Warn when binding ``what`` to a non-loopback host (unauthenticated exposure)."""
+    if host not in _LOOPBACK_HOSTS:
+        typer.echo(
+            f"warning: binding {what} to {host} exposes it to the network with no "
+            "authentication; keep it on localhost or front it with an authenticating proxy.",
+            err=True,
+        )
+
+
 @app.command()
 def run(config: ConfigOption = None) -> None:
     """Run the gateway, proxying every configured upstream MCP server."""
@@ -64,6 +77,7 @@ def run(config: ConfigOption = None) -> None:
     gateway = build_gateway(cfg)
     settings = cfg.gateway
     if settings.transport == "http":
+        _warn_if_exposed(settings.host, "the gateway")
         gateway.run(transport="http", host=settings.host, port=settings.port, show_banner=False)
     else:
         gateway.run(transport="stdio", show_banner=False)
@@ -77,6 +91,7 @@ def dashboard(
 ) -> None:
     """Serve a local web dashboard that visualizes the audit log."""
     cfg = _load(config)
+    _warn_if_exposed(host, "the dashboard")
     typer.echo(f"Bastion dashboard -> http://{host}:{port}")
     typer.echo(f"(reading audit log: {cfg.audit.path})")
     run_dashboard(cfg, host=host, port=port)

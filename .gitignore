@@ -22,7 +22,8 @@ htmlcov/
 # Bastion runtime artifacts
 bastion-audit.jsonl
 *-audit.jsonl
-.bastion-state.json
+bastion-budgets.json
+*-budgets.json
 
 # IDE / OS
 .claude/

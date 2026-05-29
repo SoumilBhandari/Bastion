@@ -23,6 +23,13 @@ def test_version_command_prints_version() -> None:
     assert result.output == f"bastion {__version__}\n"
 
 
+def test_version_tracks_installed_package_metadata() -> None:
+    """__version__ must derive from the installed distribution, not a hardcoded literal."""
+    from importlib.metadata import version
+
+    assert __version__ == version("bastion-mcp")
+
+
 def _write_config(tmp_path: Path, audit_path: Path | None = None) -> Path:
     config = tmp_path / "bastion.yaml"
     audit_path = audit_path or (tmp_path / "audit.jsonl")
@@ -178,3 +185,36 @@ def test_init_force_overwrites(tmp_path: Path) -> None:
     result = runner.invoke(app, ["init", "--path", str(target), "--force"])
     assert result.exit_code == 0
     assert "# old" not in target.read_text(encoding="utf-8")
+
+
+def test_dashboard_warns_on_non_loopback_host(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    config = _write_config(tmp_path)
+    monkeypatch.setattr("bastion.cli.run_dashboard", lambda *a, **k: None)
+    result = runner.invoke(app, ["dashboard", "--config", str(config), "--host", "0.0.0.0"])
+    assert result.exit_code == 0
+    assert "no authentication" in result.output
+
+
+def test_dashboard_no_warning_on_localhost(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    config = _write_config(tmp_path)
+    monkeypatch.setattr("bastion.cli.run_dashboard", lambda *a, **k: None)
+    result = runner.invoke(app, ["dashboard", "--config", str(config)])
+    assert result.exit_code == 0
+    assert "no authentication" not in result.output
+
+
+def test_run_http_warns_on_non_loopback_host(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    config = tmp_path / "bastion.yaml"
+    config.write_text(
+        "gateway:\n  transport: http\n  host: 0.0.0.0\nupstreams:\n  a:\n    command: x\n",
+        encoding="utf-8",
+    )
+
+    class _FakeGateway:
+        def run(self, **_kwargs: object) -> None:
+            pass
+
+    monkeypatch.setattr("bastion.cli.build_gateway", lambda _cfg: _FakeGateway())
+    result = runner.invoke(app, ["run", "--config", str(config)])
+    assert result.exit_code == 0
+    assert "no authentication" in result.output

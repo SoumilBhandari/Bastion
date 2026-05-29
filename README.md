@@ -106,8 +106,9 @@ audit log. Rate limits, budgets (call-count and cost), and argument guards
 (block or redact) layer onto the same `policy` section.
 
 See **[`docs/configuration.md`](docs/configuration.md)** for the full reference
-of every section, and **[`examples/`](examples/)** for runnable starter
-configurations.
+of every section, **[`docs/security.md`](docs/security.md)** for the security
+model (secrets in the audit log, unauthenticated surfaces), and
+**[`examples/`](examples/)** for runnable starter configurations.
 
 ## Dashboard
 

@@ -172,12 +172,20 @@ class BudgetTracker:
     def _load(self) -> None:
         if self._checkpoint_path is None or not self._checkpoint_path.exists():
             return
-        raw = json.loads(self._checkpoint_path.read_text(encoding="utf-8"))
+        try:
+            raw = json.loads(self._checkpoint_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return  # unreadable or corrupt checkpoint — start fresh rather than crash
+        if not isinstance(raw, dict):
+            return
         for key_str, state in raw.items():
-            rule_idx_str, scope_key = key_str.split(":", 1)
-            rule_idx = int(rule_idx_str)
-            if rule_idx >= len(self._rules):
-                continue  # stale entry; the rule no longer exists
+            try:
+                rule_idx_str, scope_key = str(key_str).split(":", 1)
+                rule_idx = int(rule_idx_str)
+            except ValueError:
+                continue  # malformed key — skip this entry
+            if rule_idx >= len(self._rules) or not isinstance(state, dict):
+                continue  # stale rule index, or non-object entry
             rule = self._rules[rule_idx]
             counter = BudgetCounter(
                 rule.per,
@@ -185,7 +193,10 @@ class BudgetTracker:
                 max_cost=rule.max_cost,
                 now=self._now,
             )
-            counter.restore(state)
+            try:
+                counter.restore(state)
+            except (KeyError, TypeError, ValueError):
+                continue  # malformed entry — skip rather than crash
             self._counters[(rule_idx, scope_key)] = counter
 
     def _save(self) -> None:
