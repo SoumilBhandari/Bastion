@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-25
+
 ### Fixed
 
 - `bastion --version` / `bastion version` reported a stale hardcoded `0.1.0`;
