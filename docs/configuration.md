@@ -62,10 +62,11 @@ names pass through unchanged.
 | `path` | path | `bastion-audit.jsonl` | JSON-Lines file |
 | `log_arguments` | bool | `true` | set to `false` to omit args from records |
 
-Every tool call produces one JSON record per line with these fields:
-`call_id`, `timestamp` (ISO 8601 UTC), `tool`, `arguments`, `outcome`
-(`ok` / `error` / `denied`), `duration_ms`, and `error` (the reason on
-non-`ok` outcomes).
+Every governed operation — a tool call, resource read, or prompt fetch —
+produces one JSON record per line with these fields: `call_id`, `timestamp`
+(ISO 8601 UTC), `kind` (`tool` / `resource` / `prompt`), `tool` (the tool name,
+resource URI, or prompt name), `arguments`, `outcome` (`ok` / `error` /
+`denied`), `duration_ms`, and `error` (the reason on non-`ok` outcomes).
 
 ## `cost`
 
