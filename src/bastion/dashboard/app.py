@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -12,27 +11,10 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
 
+from bastion.audit import read_records
 from bastion.config.schema import BastionConfig
 
 _INDEX_HTML = (Path(__file__).parent / "index.html").read_text(encoding="utf-8")
-
-
-def _read_audit(path: Path) -> list[dict[str, Any]]:
-    """Read every record from the audit JSON Lines file, oldest first."""
-    if not path.is_file():
-        return []
-    records: list[dict[str, Any]] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            records.append(parsed)
-    return records
 
 
 def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -58,7 +40,7 @@ def build_dashboard_app(config: BastionConfig) -> Starlette:
         return HTMLResponse(_INDEX_HTML)
 
     async def api_audit(request: Request) -> JSONResponse:
-        records = _read_audit(audit_path)
+        records = read_records(audit_path)
         recent = list(reversed(records))[:500]
         return JSONResponse({"records": recent, "summary": _summarize(records)})
 
