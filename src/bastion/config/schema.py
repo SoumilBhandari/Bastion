@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
+from jsonpath_ng import parse as parse_jsonpath
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 UPSTREAM_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
@@ -156,6 +157,18 @@ class GuardRule(BaseModel):
     arg: str = Field(min_length=1)
     pattern: str = Field(min_length=1)
     action: Literal["block", "redact"] = "block"
+
+    @model_validator(mode="after")
+    def _validate_pattern_and_arg(self) -> GuardRule:
+        try:
+            re.compile(self.pattern)
+        except re.error as exc:
+            raise ValueError(f"invalid 'pattern' regex: {exc}") from exc
+        try:
+            parse_jsonpath(self.arg)
+        except Exception as exc:  # jsonpath_ng raises its own parser errors
+            raise ValueError(f"invalid 'arg' JSONPath: {exc}") from exc
+        return self
 
 
 class PolicyConfig(BaseModel):
