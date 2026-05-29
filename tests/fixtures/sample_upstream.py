@@ -43,6 +43,18 @@ def boom() -> str:
     raise RuntimeError("boom: this tool always fails")
 
 
+@mcp.resource("data://secret")
+def secret_resource() -> str:
+    """A resource — used to test that resource reads are governed and audited."""
+    return "resource-secret-value"
+
+
+@mcp.prompt
+def greeting() -> str:
+    """A prompt — used to test that prompt fetches are governed and audited."""
+    return "hello from the prompt"
+
+
 def main() -> None:
     if len(sys.argv) > 2 and sys.argv[1] == "http":
         mcp.run(transport="http", host="127.0.0.1", port=int(sys.argv[2]), show_banner=False)

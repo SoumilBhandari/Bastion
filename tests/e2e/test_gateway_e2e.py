@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from mcp.shared.exceptions import McpError
 
 from bastion.config.schema import BastionConfig
 from bastion.gateway import build_gateway
@@ -250,6 +251,62 @@ async def test_gateway_budget_survives_a_restart(
     async with Client(gateway2) as client:
         with pytest.raises(ToolError):
             await client.call_tool("echo", {"text": "3"})
+
+
+async def test_gateway_denies_resource_read_under_default_deny(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """A default-deny policy blocks resource reads (not just tool calls) and audits them."""
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream), audit_path=audit_log, policy={"default": "deny"}
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        with pytest.raises(McpError):
+            await client.read_resource("data://secret")
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    resource_records = [r for r in records if r.get("kind") == "resource"]
+    assert len(resource_records) == 1
+    assert resource_records[0]["outcome"] == "denied"
+
+
+async def test_gateway_denies_prompt_get_under_default_deny(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """A default-deny policy blocks prompt fetches and audits them."""
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream), audit_path=audit_log, policy={"default": "deny"}
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        with pytest.raises(McpError):
+            await client.get_prompt("greeting")
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    prompt_records = [r for r in records if r.get("kind") == "prompt"]
+    assert len(prompt_records) == 1
+    assert prompt_records[0]["outcome"] == "denied"
+
+
+async def test_gateway_allows_and_audits_resource_read(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """Under default-allow a resource read goes through and is audited with kind=resource."""
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream), audit_path=audit_log, policy={"default": "allow"}
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        resources = await client.list_resources()
+        uri = str(resources[0].uri)
+        result = await client.read_resource(uri)
+        assert "resource-secret-value" in result[0].text
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    resource_records = [r for r in records if r.get("kind") == "resource"]
+    assert len(resource_records) == 1
+    assert resource_records[0]["outcome"] == "ok"
 
 
 async def test_gateway_blocks_call_when_guard_matches(

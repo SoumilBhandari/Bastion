@@ -26,6 +26,7 @@ class AuditRecord:
     """
 
     tool: str
+    kind: str = "tool"
     arguments: dict[str, Any] | None = None
     call_id: str = field(default_factory=_new_call_id)
     timestamp: str = field(default_factory=_now_iso)
@@ -39,6 +40,7 @@ class AuditRecord:
             "call_id": self.call_id,
             "timestamp": self.timestamp,
             "tool": self.tool,
+            "kind": self.kind,
             "arguments": self.arguments,
             "outcome": self.outcome,
             "duration_ms": self.duration_ms,
