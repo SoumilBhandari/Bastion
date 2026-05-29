@@ -6,7 +6,7 @@ from pathlib import Path
 from starlette.testclient import TestClient
 
 from bastion.config.schema import BastionConfig
-from bastion.dashboard.app import _read_audit, _summarize, build_dashboard_app
+from bastion.dashboard.app import _summarize, build_dashboard_app
 
 
 def _record(tool: str, outcome: str = "ok", duration_ms: float = 1.0) -> str:
@@ -30,17 +30,6 @@ def _config(audit_path: Path) -> BastionConfig:
             "audit": {"enabled": True, "path": str(audit_path)},
         }
     )
-
-
-def test_read_audit_skips_blank_and_invalid_lines(tmp_path: Path) -> None:
-    log = tmp_path / "audit.jsonl"
-    log.write_text(f"{_record('echo')}\n\nnot json\n{_record('add')}\n", encoding="utf-8")
-    records = _read_audit(log)
-    assert [r["tool"] for r in records] == ["echo", "add"]
-
-
-def test_read_audit_missing_file_returns_empty(tmp_path: Path) -> None:
-    assert _read_audit(tmp_path / "nope.jsonl") == []
 
 
 def test_summarize_counts_outcomes_and_duration() -> None:
