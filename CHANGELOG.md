@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Resource reads and prompt fetches are now governed and audited. Previously the
+  middleware only mediated `tools/call`, so `resources/read` and `prompts/get`
+  bypassed permissions and the audit log entirely — under a default-deny policy
+  an agent could still read a resource, completely unlogged. They now run the
+  permission check (default-deny denies them) and are recorded with a new audit
+  `kind` field (`tool` / `resource` / `prompt`).
+- Guards now inspect structured arguments. A block guard matching a string
+  command was evaded by passing an argv array (e.g. `["rm", "-rf", "/"]`); guards
+  now test each scalar leaf and a space-joined command-line form of list and dict
+  values.
+
 ## [1.0.1] - 2026-05-29
 
 ### Fixed
