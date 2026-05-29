@@ -92,6 +92,26 @@ def test_regex_uses_search_semantics() -> None:
     assert not ok
 
 
+def test_block_guard_catches_argv_array_command() -> None:
+    """An argv-style list can't smuggle a command past a string pattern."""
+    engine = GuardEngine([_guard("no-rm-rf", arg="$.command", pattern=r"rm\s+-rf")])
+    ok, reason = engine.check_blocking("shell", {"command": ["rm", "-rf", "/"]})
+    assert not ok
+    assert reason is not None and "no-rm-rf" in reason
+
+
+def test_block_guard_catches_value_inside_list_element() -> None:
+    engine = GuardEngine([_guard("no-secret", arg="$.args", pattern="secret")])
+    ok, _ = engine.check_blocking("tool", {"args": ["--flag", "secret-value"]})
+    assert not ok
+
+
+def test_block_guard_catches_value_nested_in_dict() -> None:
+    engine = GuardEngine([_guard("no-rm-rf", arg="$.opts", pattern=r"rm\s+-rf")])
+    ok, _ = engine.check_blocking("tool", {"opts": {"cmd": "rm -rf /"}})
+    assert not ok
+
+
 # ------------- redaction -------------
 
 

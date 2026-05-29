@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from typing import Any
 
@@ -13,6 +13,35 @@ from jsonpath_ng import parse as parse_jsonpath
 from bastion.config.schema import GuardRule
 
 REDACTED = "***"
+
+
+def _candidate_strings(value: Any) -> Iterator[str]:
+    """Yield the string forms a guard pattern is tested against.
+
+    Scalars yield ``str(value)``. Lists yield each element's candidates plus a
+    space-joined form, so an argv array like ``["rm", "-rf", "/"]`` cannot
+    smuggle ``rm -rf`` past a string-oriented pattern. Dicts yield each value's
+    candidates recursively. ``None`` yields nothing.
+    """
+    if value is None:
+        return
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (int, float)):
+        yield str(value)
+    elif isinstance(value, list):
+        parts: list[str] = []
+        for element in value:
+            for candidate in _candidate_strings(element):
+                yield candidate
+                parts.append(candidate)
+        if parts:
+            yield " ".join(parts)
+    elif isinstance(value, dict):
+        for sub in value.values():
+            yield from _candidate_strings(sub)
+    else:
+        yield str(value)
 
 
 class _CompiledGuard:
@@ -31,9 +60,7 @@ class _CompiledGuard:
         return [match.value for match in self._jsonpath.find(arguments)]
 
     def value_matches(self, value: Any) -> bool:
-        if value is None:
-            return False
-        return self._pattern.search(str(value)) is not None
+        return any(self._pattern.search(s) is not None for s in _candidate_strings(value))
 
     def redact_in_place(self, arguments: dict[str, Any]) -> None:
         for match in self._jsonpath.find(arguments):
