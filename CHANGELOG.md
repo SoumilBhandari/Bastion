@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-29
+
 ### Security
 
 - Resource reads and prompt fetches are now governed and audited. Previously the
