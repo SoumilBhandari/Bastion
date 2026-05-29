@@ -5,4 +5,9 @@ uses, enforcing budget caps, rate limits, permissions, and argument guards on
 every tool call while writing a full audit log.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("bastion-mcp")
+except PackageNotFoundError:  # pragma: no cover - source tree without an install
+    __version__ = "0.0.0+unknown"

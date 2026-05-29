@@ -23,6 +23,13 @@ def test_version_command_prints_version() -> None:
     assert result.output == f"bastion {__version__}\n"
 
 
+def test_version_tracks_installed_package_metadata() -> None:
+    """__version__ must derive from the installed distribution, not a hardcoded literal."""
+    from importlib.metadata import version
+
+    assert __version__ == version("bastion-mcp")
+
+
 def _write_config(tmp_path: Path, audit_path: Path | None = None) -> Path:
     config = tmp_path / "bastion.yaml"
     audit_path = audit_path or (tmp_path / "audit.jsonl")
