@@ -208,6 +208,8 @@ policy:
 
 ## See also
 
+- [`security.md`](security.md) — operational security notes (secrets in the
+  audit log, unauthenticated surfaces, guard patterns).
 - `examples/` — runnable starter configurations.
 - `CHANGELOG.md` — what landed in each release.
 - `CONTRIBUTING.md` — how to propose changes.
