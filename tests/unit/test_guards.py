@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
+import pytest
+from pydantic import ValidationError
+
 from bastion.config.schema import GuardRule
 from bastion.policy.guards import GuardEngine
 
@@ -159,3 +162,21 @@ def test_block_guards_skipped_by_redact() -> None:
     engine = GuardEngine([_guard("block-bad", arg="$.body", pattern="bad", action="block")])
     out = engine.redact("post", {"body": "bad value"})
     assert out == {"body": "bad value"}
+
+
+# ------------- config-time validation -------------
+
+
+def test_guard_rule_rejects_invalid_regex() -> None:
+    with pytest.raises(ValidationError, match="invalid 'pattern'"):
+        GuardRule(name="g", arg="$.x", pattern="(unclosed")
+
+
+def test_guard_rule_rejects_invalid_jsonpath() -> None:
+    with pytest.raises(ValidationError, match="invalid 'arg'"):
+        GuardRule(name="g", arg="$[", pattern="x")
+
+
+def test_guard_rule_accepts_valid_rule() -> None:
+    rule = GuardRule(name="g", arg="$.command", pattern=r"rm\s+-rf", action="block")
+    assert rule.name == "g"
