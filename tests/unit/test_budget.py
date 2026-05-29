@@ -242,6 +242,42 @@ def test_tracker_window_rolls_after_restart(tmp_path: Path) -> None:
     assert tracker2.peek("t", 0.0)[0]
 
 
+def test_tracker_tolerates_corrupt_checkpoint(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    path.write_text("this is not json{{{", encoding="utf-8")
+    tracker = BudgetTracker(
+        [_rule("cap", max_calls=2)], now=FakeUTC(_at(2026, 5, 19)), checkpoint_path=path
+    )
+    assert tracker.peek("t", 0.0)[0]  # started fresh rather than crashing
+
+
+def test_tracker_skips_malformed_checkpoint_entries(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    path.write_text(
+        '{"nocolon": {"window": "x", "calls": 1, "cost": 0.0}, '
+        '"9:": {"window": "x", "calls": 1, "cost": 0.0}, '
+        '"0:": {"calls": "oops"}}',
+        encoding="utf-8",
+    )
+    tracker = BudgetTracker(
+        [_rule("cap", max_calls=2)], now=FakeUTC(_at(2026, 5, 19)), checkpoint_path=path
+    )
+    assert tracker.peek("t", 0.0)[0]  # every entry skipped; counter is fresh
+
+
+def test_tracker_loads_valid_entry_alongside_garbage(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    path.write_text(
+        '{"0:": {"window": "2026-05-19", "calls": 2, "cost": 0.0}, "garbage": 5}',
+        encoding="utf-8",
+    )
+    tracker = BudgetTracker(
+        [_rule("cap", max_calls=2)], now=FakeUTC(_at(2026, 5, 19)), checkpoint_path=path
+    )
+    # rule 0 restored at its cap of 2 calls -> the next call is over budget
+    assert not tracker.peek("t", 0.0)[0]
+
+
 def test_tracker_ignores_stale_rule_entries(tmp_path: Path) -> None:
     path = tmp_path / "budget.json"
     # First run with two rules
