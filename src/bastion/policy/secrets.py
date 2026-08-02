@@ -24,8 +24,14 @@ from typing import Any
 
 REDACTED = "***"
 
-_MAX_SCAN_CHARS = 1_000_000
-"""Cap on how much text is scanned, so a huge result cannot stall the gateway."""
+SCAN_LIMIT = 1_000_000
+"""How much of a value is examined.
+
+Every pattern is scanned across the text, so an unbounded result would let one
+enormous response stall the gateway. Only a prefix is examined; anything past
+the limit is passed through untouched, so a credential buried deep inside a
+very large result can still reach the agent.
+"""
 
 
 @dataclass(frozen=True)
@@ -54,17 +60,17 @@ BUILTIN_SECRET_PATTERNS: tuple[SecretPattern, ...] = (
     _compile("openai-style-api-key", r"\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{16,255}\b"),
     _compile("private-key-block", r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----"),
     _compile("json-web-token", r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
-    _compile("bearer-token", r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,255}"),
-    _compile("basic-auth-header", r"(?i)\bbasic\s+[A-Za-z0-9+/=]{16,255}"),
+    _compile("bearer-token", r"(?i:\bbearer\s+[A-Za-z0-9._~+/=-]{16,255})"),
+    _compile("basic-auth-header", r"(?i:\bbasic\s+[A-Za-z0-9+/=]{16,255})"),
     # Lookaround keeps the scheme and host readable: only "user:pass" is replaced.
     _compile("url-embedded-credentials", r"(?<=://)[^\s:/@]{1,255}:[^\s:/@]{1,255}(?=@)"),
     _compile(
         "assigned-credential",
-        r"""(?ix)
+        r"""(?ix:
         \b (?: api[_-]?key | secret[_-]?key | access[_-]?token
              | auth[_-]?token | password | passwd | credential )
         \b \s* [:=] \s* ["']? ([^\s"',;}]{8,255})
-        """,
+        )""",
     ),
 )
 
@@ -95,11 +101,10 @@ def redact_text(text: str) -> str:
     For the ``key = value`` form only the value is replaced, so the log still
     shows which setting was passed.
     """
-    if len(text) > _MAX_SCAN_CHARS:
-        return text
+    head, tail = text[:SCAN_LIMIT], text[SCAN_LIMIT:]
     for secret in BUILTIN_SECRET_PATTERNS:
-        text = secret.pattern.sub(_replacement, text)
-    return text
+        head = secret.pattern.sub(_replacement, head)
+    return head + tail
 
 
 def redact_structure(value: Any) -> Any:
@@ -140,10 +145,9 @@ def _replacement(match: re.Match[str]) -> str:
 
 
 def _scan(text: str) -> Iterator[str]:
-    if len(text) > _MAX_SCAN_CHARS:
-        return
+    window = text[:SCAN_LIMIT]
     for secret in BUILTIN_SECRET_PATTERNS:
-        if secret.pattern.search(text) is not None:
+        if secret.pattern.search(window) is not None:
             yield secret.name
 
 

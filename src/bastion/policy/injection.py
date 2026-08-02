@@ -20,7 +20,16 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-_MAX_SCAN_CHARS = 1_000_000
+SCAN_LIMIT = 1_000_000
+"""How much of a result is examined.
+
+Every pattern is scanned across the text, at roughly 0.2 ms per kilobyte, so an
+unbounded result would let one enormous response stall the gateway. Only a
+prefix is examined; text past the limit is not scanned, which an attacker who
+can control the size of a response could use to push a payload out of range.
+Lower it where results are large and latency matters, or turn detection off
+entirely rather than paying for a scan you do not trust.
+"""
 
 CAUTION = (
     "[bastion] The tool output below matched prompt-injection heuristics. "
@@ -103,19 +112,24 @@ _HTML_COMMENT_INSTRUCTION = re.compile(
 
 
 def find_injection(text: str) -> list[str]:
-    """Names of every injection signature found in ``text``, without duplicates."""
+    """Names of every injection signature found in ``text``, without duplicates.
+
+    Scanning is linear in the length of the text and costs roughly 0.2 ms per
+    kilobyte, so only the first :data:`SCAN_LIMIT` characters are examined.
+    """
     return list(_ordered_unique(_scan(text)))
 
 
 def _scan(text: str) -> Iterator[str]:
-    if not text or len(text) > _MAX_SCAN_CHARS:
+    if not text:
         return
+    window = text[:SCAN_LIMIT]
     for signature in INJECTION_PATTERNS:
-        if signature.pattern.search(text) is not None:
+        if signature.pattern.search(window) is not None:
             yield signature.name
-    if _HIDDEN_CHARACTERS.search(text) is not None:
+    if _HIDDEN_CHARACTERS.search(window) is not None:
         yield "hidden-characters"
-    if _HTML_COMMENT_INSTRUCTION.search(text) is not None:
+    if _HTML_COMMENT_INSTRUCTION.search(window) is not None:
         yield "hidden-html-comment"
 
 

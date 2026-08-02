@@ -2,7 +2,13 @@
 
 import pytest
 
-from bastion.policy.secrets import REDACTED, find_secrets, redact_structure, redact_text
+from bastion.policy.secrets import (
+    REDACTED,
+    SCAN_LIMIT,
+    find_secrets,
+    redact_structure,
+    redact_text,
+)
 
 CREDENTIALS = [
     ("aws-access-key-id", "AKIAIOSFODNN7EXAMPLE"),
@@ -97,8 +103,21 @@ def test_non_string_leaves_are_preserved() -> None:
     assert redact_structure(original) == original
 
 
-def test_enormous_text_is_skipped_rather_than_scanned() -> None:
-    """A multi-megabyte result must not stall the gateway on regex scanning."""
-    huge = "x" * 2_000_000
-    assert redact_text(huge) == huge
-    assert find_secrets(huge) == []
+def test_a_credential_in_an_enormous_result_is_still_caught() -> None:
+    """Size must not be a way to smuggle a credential past the scanner."""
+    huge = "AKIAIOSFODNN7EXAMPLE " + "x" * 2_000_000
+    assert find_secrets(huge) == ["aws-access-key-id"]
+    assert "AKIAIOSFODNN7EXAMPLE" not in redact_text(huge)
+
+
+def test_scanning_stops_at_the_limit() -> None:
+    """Scanning is linear, so an unbounded result would stall the gateway."""
+    beyond = "x" * (SCAN_LIMIT + 10) + " AKIAIOSFODNN7EXAMPLE"
+    assert find_secrets(beyond) == []
+
+
+def test_text_past_the_limit_is_preserved_intact() -> None:
+    tail = " tail content that must survive"
+    text = "x" * (SCAN_LIMIT + 10) + tail
+    assert redact_text(text).endswith(tail)
+    assert len(redact_text(text)) == len(text)
