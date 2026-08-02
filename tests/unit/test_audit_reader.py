@@ -153,3 +153,51 @@ def test_tail_records_respects_should_stop_immediately(tmp_path: Path) -> None:
     log = tmp_path / "audit.jsonl"
     log.write_text("", encoding="utf-8")
     assert list(tail_records(log, sleep=lambda _: None, should_stop=lambda: True)) == []
+
+
+# ------------- IncrementalLog -------------
+
+
+def test_incremental_log_holds_back_a_partial_line(tmp_path: Path) -> None:
+    """A record still being written must not be parsed, or dropped when it completes."""
+    from bastion.audit.reader import IncrementalLog
+
+    log = tmp_path / "audit.jsonl"
+    log.write_text('{"tool":"complete"}\n{"tool":"parti', encoding="utf-8")
+    reader = IncrementalLog(log)
+    assert [r["tool"] for r in reader.records()] == ["complete"]
+
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write('al"}\n')
+    assert [r["tool"] for r in reader.records()] == ["complete", "partial"]
+
+
+def test_incremental_log_reads_only_what_was_appended(tmp_path: Path) -> None:
+    from bastion.audit.reader import IncrementalLog
+
+    log = tmp_path / "audit.jsonl"
+    log.write_text('{"tool":"a"}\n', encoding="utf-8")
+    reader = IncrementalLog(log)
+    assert len(reader.records()) == 1
+
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write('{"tool":"b"}\n')
+    assert [r["tool"] for r in reader.records()] == ["a", "b"]
+
+
+def test_incremental_log_starts_over_when_the_file_shrinks(tmp_path: Path) -> None:
+    from bastion.audit.reader import IncrementalLog
+
+    log = tmp_path / "audit.jsonl"
+    log.write_text('{"tool":"old"}\n' * 10, encoding="utf-8")
+    reader = IncrementalLog(log)
+    assert len(reader.records()) == 10
+
+    log.write_text('{"tool":"fresh"}\n', encoding="utf-8")
+    assert [r["tool"] for r in reader.records()] == ["fresh"]
+
+
+def test_incremental_log_tolerates_a_missing_file(tmp_path: Path) -> None:
+    from bastion.audit.reader import IncrementalLog
+
+    assert IncrementalLog(tmp_path / "absent.jsonl").records() == []

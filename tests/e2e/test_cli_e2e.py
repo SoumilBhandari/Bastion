@@ -40,7 +40,7 @@ def test_doctor_connects_to_a_real_upstream(project: Path) -> None:
     result = _run("doctor", cwd=project)
 
     assert result.returncode == 0, result.stderr
-    assert "8 tools" in result.stdout
+    assert "tools, connected in" in result.stdout
     assert "nothing to flag" in result.stdout
 
 

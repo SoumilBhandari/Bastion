@@ -21,6 +21,9 @@ OPENAI_STYLE_API_KEY = "sk-proj" + "-abcdefghijklmnopqrstuvwx"
 PRIVATE_KEY_HEADER = "-----BEGIN OPENSSH PRIVATE KEY-----"
 BEARER_HEADER = "Bearer " + "abcdefghijklmnopqrstuvwxyz012345"
 BASIC_AUTH_HEADER = "Basic " + "YWxhZGRpbjpvcGVuc2VzYW1l1234"
+JSON_WEB_TOKEN = (
+    "eyJ" + "hbGciOiJIUzI1NiJ9." + "eyJzdWIiOiIxMjM0NTY3ODkwIn0." + "dozjgNryP4J3jVmNHl0w5N"
+)
 
 BY_DETECTOR: list[tuple[str, str]] = [
     ("aws-access-key-id", AWS_ACCESS_KEY_ID),
@@ -34,5 +37,6 @@ BY_DETECTOR: list[tuple[str, str]] = [
     ("private-key-block", PRIVATE_KEY_HEADER),
     ("bearer-token", BEARER_HEADER),
     ("basic-auth-header", BASIC_AUTH_HEADER),
+    ("json-web-token", JSON_WEB_TOKEN),
 ]
 """Each built-in detector paired with a value it should catch."""

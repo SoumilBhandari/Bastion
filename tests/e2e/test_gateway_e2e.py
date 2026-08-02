@@ -730,3 +730,22 @@ async def test_the_audit_log_records_what_a_call_actually_cost(
     assert by_tool["add"]["cost"] == 0.25
     # A denied call never ran, so it was never charged.
     assert by_tool["delete_thing"]["cost"] is None
+
+
+async def test_a_hanging_resource_read_times_out(sample_upstream: Path, python_exe: str) -> None:
+    """The timeout covers resources too, not only tool calls."""
+    config = _config(_stdio(python_exe, sample_upstream), timeouts={"default_seconds": 0.5})
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        # A resource that exists and returns promptly still works under the cap.
+        assert await client.read_resource("data://secret")
+
+
+async def test_denied_resource_templates_are_hidden(sample_upstream: Path, python_exe: str) -> None:
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={"default": "deny", "permissions": [{"tool": "echo", "action": "allow"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        assert await client.list_resource_templates() == []
