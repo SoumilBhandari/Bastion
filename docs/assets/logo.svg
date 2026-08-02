@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 132" width="120" height="132" role="img" aria-label="Bastion">
+  <!-- A solid shield with the gate knocked out, so the cut-outs take on whatever
+       background the page has and the mark reads on both light and dark. -->
+  <defs>
+    <mask id="gate">
+      <rect width="120" height="132" fill="#fff"/>
+      <!-- three gates, narrowing inward: the layers a call passes through -->
+      <rect x="34" y="46" width="10" height="46" rx="3" fill="#000"/>
+      <rect x="55" y="38" width="10" height="54" rx="3" fill="#000"/>
+      <rect x="76" y="46" width="10" height="46" rx="3" fill="#000"/>
+      <rect x="30" y="60" width="60" height="7" fill="#000"/>
+    </mask>
+  </defs>
+  <path d="M60 4 L112 22 V64 C112 96 90 118 60 128 C30 118 8 96 8 64 V22 Z"
+        fill="#e3b341" mask="url(#gate)"/>
+</svg>
