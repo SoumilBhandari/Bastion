@@ -80,8 +80,8 @@ the log.
 ## Scanning stops at a size limit
 
 Both scanners examine at most `SCAN_LIMIT` characters (1 MB) of a value, because
-scanning is linear and an unbounded result would let one enormous response stall
-the gateway. Content past that point is neither scanned nor redacted, so an
+scanning is linear — roughly 0.09 ms per kilobyte — and an unbounded result would
+let one enormous response stall the gateway. Content past that point is neither scanned nor redacted, so an
 attacker who controls the size of a response can push a payload out of range.
 Where results are routinely large, weigh that against turning detection off
 rather than assuming coverage you do not have.

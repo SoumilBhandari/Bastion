@@ -23,7 +23,7 @@ from dataclasses import dataclass
 SCAN_LIMIT = 1_000_000
 """How much of a result is examined.
 
-Every pattern is scanned across the text, at roughly 0.2 ms per kilobyte, so an
+Every pattern is scanned across the text, at roughly 0.09 ms per kilobyte, so an
 unbounded result would let one enormous response stall the gateway. Only a
 prefix is examined; text past the limit is not scanned, which an attacker who
 can control the size of a response could use to push a payload out of range.
@@ -148,7 +148,7 @@ def _has_hidden_comment(text: str) -> bool:
 def find_injection(text: str) -> list[str]:
     """Names of every injection signature found in ``text``, without duplicates.
 
-    Scanning is linear in the length of the text and costs roughly 0.2 ms per
+    Scanning is linear in the length of the text and costs roughly 0.09 ms per
     kilobyte, so only the first :data:`SCAN_LIMIT` characters are examined.
     """
     return list(_ordered_unique(_scan(text)))

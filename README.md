@@ -259,19 +259,29 @@ it's reporting on.
 ## Performance
 
 Bastion is on the hot path of every tool call, so its cost is measured rather
-than asserted. From `benchmarks/bench_gateway.py` on an M4 Max, against the same
-upstream reached directly so the upstream's own latency cancels out:
+than asserted. `benchmarks/bench_gateway.py` times the gateway against the same
+upstream reached directly, so the upstream's own latency cancels out, and
+interleaves the two so both absorb the same background noise.
 
-| | median | overhead |
-| --- | --- | --- |
-| upstream via a bare proxy | 2.38 ms | — |
-| through Bastion, policy only | 2.61 ms | +231 µs |
-| through Bastion, policy + audit | 2.71 ms | +331 µs |
+On an M4 Max, a stdio round trip costs about **2.4–2.7 ms**, and putting Bastion
+in front of it adds **roughly 0.25–0.55 ms** with every layer enabled —
+permissions, guards, rate limits, budgets, response scanning, and a
+hash-chained audit write. The spread is machine load, not variance in Bastion:
+measure on your own hardware rather than trusting a number from someone else's.
 
-That's with every layer on: permissions, guards, rate limits, budgets, response
-scanning, and a hash-chained audit write. Individually a policy check is ~4 µs
-and an audit write ~10 µs; scanning a result runs about 0.2 ms per kilobyte —
-the one cost that grows with what your tools return.
+The pieces, which are stable:
+
+| | cost |
+| --- | --- |
+| policy check, allowed | ~4 µs |
+| policy check, denied | ~0.7 µs |
+| guard redaction | ~2.7 µs |
+| secret redaction over arguments | ~6.8 µs |
+| audit write, hash-chained and flushed | ~10 µs |
+| scanning a result | ~0.09 ms per KB |
+
+Only the last grows with what your tools return, and it is the one worth
+watching if your upstreams hand back large documents.
 
 ```bash
 python benchmarks/bench_gateway.py
