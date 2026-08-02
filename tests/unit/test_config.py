@@ -82,6 +82,43 @@ def test_load_config_reads_a_valid_file(tmp_path: Path) -> None:
     assert "files" in config.upstreams
 
 
+def test_load_config_anchors_relative_paths_to_the_config_file(tmp_path: Path) -> None:
+    nested = tmp_path / "conf"
+    nested.mkdir()
+    config_file = nested / "bastion.yaml"
+    config_file.write_text(
+        "upstreams:\n"
+        "  files:\n"
+        "    command: npx\n"
+        "audit:\n"
+        "  path: ./logs/audit.jsonl\n"
+        "policy:\n"
+        "  budget_checkpoint: budgets.json\n",
+        encoding="utf-8",
+    )
+    config = load_config(config_file)
+    assert config.audit.path == nested.resolve() / "logs" / "audit.jsonl"
+    assert config.policy.budget_checkpoint == nested.resolve() / "budgets.json"
+
+
+def test_load_config_leaves_absolute_paths_alone(tmp_path: Path) -> None:
+    config_file = tmp_path / "bastion.yaml"
+    config_file.write_text(
+        "upstreams:\n  files:\n    command: npx\naudit:\n  path: /var/log/bastion.jsonl\n",
+        encoding="utf-8",
+    )
+    assert load_config(config_file).audit.path == Path("/var/log/bastion.jsonl")
+
+
+def test_load_config_keeps_a_disabled_budget_checkpoint_disabled(tmp_path: Path) -> None:
+    config_file = tmp_path / "bastion.yaml"
+    config_file.write_text(
+        "upstreams:\n  files:\n    command: npx\npolicy:\n  budget_checkpoint: null\n",
+        encoding="utf-8",
+    )
+    assert load_config(config_file).policy.budget_checkpoint is None
+
+
 def test_load_config_rejects_invalid_yaml(tmp_path: Path) -> None:
     config_file = tmp_path / "bad.yaml"
     config_file.write_text("upstreams: [unclosed", encoding="utf-8")

@@ -64,9 +64,29 @@ def load_config(path: Path) -> BastionConfig:
         )
 
     try:
-        return BastionConfig.model_validate(raw)
+        config = BastionConfig.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(_format_validation_error(path, exc)) from exc
+
+    anchor_paths(config, path.resolve().parent)
+    return config
+
+
+def anchor_paths(config: BastionConfig, base: Path) -> None:
+    """Re-anchor every relative path in ``config`` to ``base``.
+
+    Paths in the config file read as relative to the config file itself, not to
+    whatever directory the process happens to start in. Without this,
+    ``bastion run --config ~/configs/bastion.yaml`` would scatter the audit log
+    and budget checkpoint across every directory it was ever launched from.
+    """
+    config.audit.path = _anchor(config.audit.path, base)
+    if config.policy.budget_checkpoint is not None:
+        config.policy.budget_checkpoint = _anchor(config.policy.budget_checkpoint, base)
+
+
+def _anchor(path: Path, base: Path) -> Path:
+    return path if path.is_absolute() else base / path
 
 
 def _format_validation_error(path: Path, exc: ValidationError) -> str:
