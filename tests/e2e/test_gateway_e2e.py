@@ -19,6 +19,7 @@ def _config(
     audit_path: Path | None = None,
     policy: dict[str, Any] | None = None,
     cost: dict[str, Any] | None = None,
+    timeouts: dict[str, Any] | None = None,
 ) -> BastionConfig:
     raw: dict[str, Any] = {"upstreams": upstreams}
     if audit_path is None:
@@ -29,6 +30,8 @@ def _config(
         raw["policy"] = policy
     if cost is not None:
         raw["cost"] = cost
+    if timeouts is not None:
+        raw["timeouts"] = timeouts
     return BastionConfig.model_validate(raw)
 
 
@@ -469,3 +472,65 @@ async def test_allowed_tools_are_listed_unchanged(sample_upstream: Path, python_
         after = {t.name: t.description for t in await client.list_tools()}
 
     assert after == {name: desc for name, desc in before.items() if name != "boom"}
+
+
+# ------------- call timeouts -------------
+
+
+async def test_a_hanging_tool_times_out(sample_upstream: Path, python_exe: str) -> None:
+    config = _config(_stdio(python_exe, sample_upstream), timeouts={"default_seconds": 0.5})
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        with pytest.raises(ToolError, match="timed out"):
+            await client.call_tool("hang", {"seconds": 30})
+
+
+async def test_a_timeout_is_recorded_in_the_audit_log(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        audit_path=audit_log,
+        timeouts={"default_seconds": 0.5},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool("hang", {"seconds": 30})
+
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["tool"] == "hang"
+    assert records[0]["outcome"] == "error"
+    assert "timed out" in records[0]["error"]
+
+
+async def test_a_fast_tool_is_unaffected_by_the_timeout(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    config = _config(_stdio(python_exe, sample_upstream), timeouts={"default_seconds": 10})
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        assert (await client.call_tool("echo", {"text": "quick"})).data == "quick"
+
+
+async def test_a_per_tool_timeout_overrides_the_default(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    """A tool granted more time survives a default that would have killed it."""
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        timeouts={"default_seconds": 0.2, "per_tool": {"hang": 10.0}},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        result = await client.call_tool("hang", {"seconds": 0.5})
+    assert result.data == "finally done"
+
+
+async def test_timeouts_can_be_disabled(sample_upstream: Path, python_exe: str) -> None:
+    config = _config(_stdio(python_exe, sample_upstream), timeouts={"default_seconds": None})
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        result = await client.call_tool("hang", {"seconds": 0.1})
+    assert result.data == "finally done"

@@ -3,5 +3,6 @@
 from bastion.middleware.audit_mw import AuditMiddleware
 from bastion.middleware.error_mw import ErrorBoundary
 from bastion.middleware.policy_mw import PolicyMiddleware
+from bastion.middleware.timeout_mw import TimeoutMiddleware
 
-__all__ = ["AuditMiddleware", "ErrorBoundary", "PolicyMiddleware"]
+__all__ = ["AuditMiddleware", "ErrorBoundary", "PolicyMiddleware", "TimeoutMiddleware"]

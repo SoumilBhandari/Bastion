@@ -99,6 +99,27 @@ class CostConfig(BaseModel):
     per_tool: dict[str, float] = Field(default_factory=dict)
 
 
+class TimeoutConfig(BaseModel):
+    """How long the gateway waits on an upstream before giving up.
+
+    Without a cap a wedged upstream — a server that accepted the request and
+    then stopped answering — hangs the agent indefinitely, with no error to
+    react to and no way out but killing the client. The timeout applies only
+    to the upstream call itself, not to policy evaluation.
+
+    Tools listed in ``per_tool`` use their own limit; everything else uses
+    ``default_seconds``. Set ``default_seconds`` to ``null`` to wait forever.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_seconds: float | None = Field(default=120.0, gt=0.0)
+    per_tool: dict[str, float] = Field(default_factory=dict)
+
+    def for_tool(self, tool: str) -> float | None:
+        return self.per_tool.get(tool, self.default_seconds)
+
+
 class PermissionRule(BaseModel):
     """An allow/deny rule matching tool names by glob (e.g. ``files_*``)."""
 
@@ -212,6 +233,7 @@ class BastionConfig(BaseModel):
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     cost: CostConfig = Field(default_factory=CostConfig)
+    timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     upstreams: dict[str, Upstream] = Field(min_length=1)
 

@@ -6,6 +6,7 @@ Run as a stdio server (default) or over HTTP:
     python sample_upstream.py http 9123  # HTTP on 127.0.0.1:9123
 """
 
+import asyncio
 import sys
 
 from fastmcp import FastMCP
@@ -41,6 +42,13 @@ def write_note(path: str, body: str) -> str:
 def boom() -> str:
     """Always raise an error — used to exercise the gateway's error handling."""
     raise RuntimeError("boom: this tool always fails")
+
+
+@mcp.tool
+async def hang(seconds: float = 30.0) -> str:
+    """Sleep for a long time — used to exercise the gateway's call timeout."""
+    await asyncio.sleep(seconds)
+    return "finally done"
 
 
 @mcp.resource("data://secret")

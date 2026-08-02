@@ -13,7 +13,12 @@ from fastmcp.server import create_proxy
 
 from bastion.audit import AuditWriter
 from bastion.config.schema import BastionConfig, Upstream
-from bastion.middleware import AuditMiddleware, ErrorBoundary, PolicyMiddleware
+from bastion.middleware import (
+    AuditMiddleware,
+    ErrorBoundary,
+    PolicyMiddleware,
+    TimeoutMiddleware,
+)
 from bastion.policy import PolicyEngine
 
 GATEWAY_NAME = "bastion"
@@ -46,7 +51,15 @@ def build_mcp_config(config: BastionConfig) -> dict[str, Any]:
 
 def build_gateway(config: BastionConfig) -> FastMCP[Any]:
     """Build the gateway: a proxy over every configured upstream, with the
-    middleware chain (error boundary, audit logging, policy) attached.
+    middleware chain attached.
+
+    The chain runs outermost-first::
+
+        ErrorBoundary → Audit → Policy → Timeout → upstream
+
+    Audit sits outside Policy so denials are recorded, and Timeout sits inside
+    Policy so the clock covers only the upstream call — a request that waits on
+    a rate limit is not charged against its own timeout.
 
     With a single upstream, tools keep their original names. With several,
     FastMCP namespaces each tool by its upstream key (``<upstream>_<tool>``).
@@ -70,4 +83,5 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
             )
         )
     gateway.add_middleware(PolicyMiddleware(engine, hide_denied=config.policy.hide_denied))
+    gateway.add_middleware(TimeoutMiddleware(config.timeouts))
     return gateway
