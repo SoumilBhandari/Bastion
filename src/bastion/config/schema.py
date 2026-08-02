@@ -66,13 +66,23 @@ class GatewaySettings(BaseModel):
 
 
 class AuditConfig(BaseModel):
-    """Whether and where the gateway writes its audit log."""
+    """Whether, where, and how durably the gateway writes its audit log.
+
+    ``hash_chain`` links each record to the one before it, so edits to the log
+    are detectable. ``fsync`` forces each record to physical disk before the
+    call proceeds — correct across a power loss, but it costs a disk round trip
+    per call. ``max_bytes``/``keep`` bound how much history is kept on disk.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
     path: Path = Path("bastion-audit.jsonl")
     log_arguments: bool = True
+    hash_chain: bool = True
+    fsync: bool = False
+    max_bytes: int | None = Field(default=100_000_000, ge=1)
+    keep: int = Field(default=5, ge=0)
 
 
 class CostConfig(BaseModel):

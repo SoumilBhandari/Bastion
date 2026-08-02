@@ -1,4 +1,4 @@
-"""The audit record — one structured entry per tool call."""
+"""The audit record — one structured entry per governed operation."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ def _now_iso() -> str:
 class AuditRecord:
     """One audit-log entry, serialized as a single JSON line.
 
-    Created when a tool call starts; ``outcome``, ``duration_ms``, and ``error``
-    are filled in once the call completes.
+    Created when an operation starts; ``outcome``, ``duration_ms``, and
+    ``error`` are filled in once it completes.
     """
 
     tool: str
@@ -33,10 +33,11 @@ class AuditRecord:
     outcome: str = "ok"
     duration_ms: float = 0.0
     error: str | None = None
+    cost: float | None = None
 
-    def to_json_line(self) -> str:
-        """Serialize to a single-line JSON string (no trailing newline)."""
-        payload: dict[str, Any] = {
+    def payload(self) -> dict[str, Any]:
+        """The record's own fields, without any hash-chain metadata."""
+        return {
             "call_id": self.call_id,
             "timestamp": self.timestamp,
             "tool": self.tool,
@@ -45,5 +46,9 @@ class AuditRecord:
             "outcome": self.outcome,
             "duration_ms": self.duration_ms,
             "error": self.error,
+            "cost": self.cost,
         }
-        return json.dumps(payload, default=str, ensure_ascii=False)
+
+    def to_json_line(self) -> str:
+        """Serialize to a single-line JSON string (no trailing newline)."""
+        return json.dumps(self.payload(), default=str, ensure_ascii=False)

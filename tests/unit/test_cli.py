@@ -218,3 +218,69 @@ def test_run_http_warns_on_non_loopback_host(tmp_path: Path, monkeypatch) -> Non
     result = runner.invoke(app, ["run", "--config", str(config)])
     assert result.exit_code == 0
     assert "no authentication" in result.output
+
+
+# ------------- verify -------------
+
+
+def _seed_chained_audit(audit_path: Path, count: int = 3) -> None:
+    from bastion.audit import AuditRecord, AuditWriter
+
+    with AuditWriter(audit_path) as writer:
+        for index in range(count):
+            writer.write(AuditRecord(tool=f"t{index}"))
+
+
+def test_verify_accepts_an_untouched_log(tmp_path: Path) -> None:
+    audit = tmp_path / "audit.jsonl"
+    config = _write_config(tmp_path, audit_path=audit)
+    _seed_chained_audit(audit)
+
+    result = runner.invoke(app, ["verify", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "OK" in result.output
+    assert "3 records" in result.output
+
+
+def test_verify_rejects_an_edited_log(tmp_path: Path) -> None:
+    audit = tmp_path / "audit.jsonl"
+    config = _write_config(tmp_path, audit_path=audit)
+    _seed_chained_audit(audit)
+
+    lines = audit.read_text(encoding="utf-8").splitlines()
+    tampered = json.loads(lines[1])
+    tampered["tool"] = "something_else"
+    lines[1] = json.dumps(tampered)
+    audit.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["verify", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert "FAILED" in result.output
+
+
+def test_verify_reports_an_empty_log(tmp_path: Path) -> None:
+    audit = tmp_path / "audit.jsonl"
+    config = _write_config(tmp_path, audit_path=audit)
+
+    result = runner.invoke(app, ["verify", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "no audit records" in result.output
+
+
+def test_verify_can_span_rotated_generations(tmp_path: Path) -> None:
+    from bastion.audit import AuditRecord, AuditWriter
+
+    audit = tmp_path / "audit.jsonl"
+    config = _write_config(tmp_path, audit_path=audit)
+    with AuditWriter(audit, max_bytes=200, keep=3) as writer:
+        for index in range(20):
+            writer.write(AuditRecord(tool=f"t{index}"))
+
+    assert audit.with_name("audit.jsonl.1").is_file()
+
+    spanning = runner.invoke(app, ["verify", "--config", str(config), "--include-rotated"])
+    assert spanning.exit_code == 0
+    assert "OK" in spanning.output

@@ -122,6 +122,31 @@ def test_tail_records_waits_for_file_to_exist(tmp_path: Path) -> None:
     assert seen == ["hello"]
 
 
+def test_tail_records_follows_the_log_across_a_rotation(tmp_path: Path) -> None:
+    """After rotation the saved offset points past a smaller file; keep following."""
+    from bastion.audit import tail_records
+
+    log = tmp_path / "audit.jsonl"
+    log.write_text('{"tool":"a","outcome":"ok"}\n' * 20, encoding="utf-8")
+
+    seen: list[str] = []
+    rotated = [False]
+
+    def fake_sleep(_: float) -> None:
+        if not rotated[0]:
+            log.replace(tmp_path / "audit.jsonl.1")
+            log.write_text('{"tool":"after_rotation","outcome":"ok"}\n', encoding="utf-8")
+            rotated[0] = True
+
+    def stop_when_seen() -> bool:
+        return len(seen) >= 1
+
+    for record in tail_records(log, sleep=fake_sleep, should_stop=stop_when_seen):
+        seen.append(record["tool"])
+
+    assert seen == ["after_rotation"]
+
+
 def test_tail_records_respects_should_stop_immediately(tmp_path: Path) -> None:
     from bastion.audit import tail_records
 

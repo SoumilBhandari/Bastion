@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 
 from bastion import __version__
-from bastion.audit import read_records, tail_records
+from bastion.audit import iter_records, read_records, rotated_paths, tail_records, verify_records
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
 from bastion.dashboard import run_dashboard
 from bastion.gateway import build_gateway
@@ -183,6 +183,58 @@ def init(
         raise typer.Exit(code=1)
     path.write_text(STARTER_CONFIG, encoding="utf-8")
     typer.echo(f"wrote {path}")
+
+
+@app.command()
+def verify(
+    config: ConfigOption = None,
+    include_rotated: Annotated[
+        bool,
+        typer.Option(
+            "--include-rotated",
+            help="Also verify rotated generations, oldest first, as one chain.",
+        ),
+    ] = False,
+) -> None:
+    """Check the audit log's hash chain for signs of tampering."""
+    cfg = _load(config)
+    path = cfg.audit.path
+    sources = [*rotated_paths(path), path] if include_rotated else [path]
+
+    records: list[dict[str, object]] = []
+    for source in sources:
+        records.extend(iter_records(source))
+
+    if not records:
+        typer.echo(f"no audit records in {path}")
+        return
+
+    report = verify_records(records)
+    console = Console(stderr=not report.ok)
+
+    if not report.ok:
+        console.print(f"[red]FAILED[/red] — the audit log at {path} does not verify:")
+        for entry in report.breaks:
+            console.print(f"  [red]·[/red] {entry}")
+        console.print(
+            "\n[dim]Everything before the first break is intact. Records after it "
+            "cannot be trusted.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]OK[/green] — {report.checked} records form an unbroken chain.")
+    if report.unchained:
+        console.print(
+            f"[dim]{report.unchained} earlier record(s) predate hash chaining and were "
+            "not verified.[/dim]"
+        )
+    if not report.starts_at_genesis and not include_rotated:
+        console.print(
+            "[dim]The chain continues from an earlier generation; pass --include-rotated "
+            "to verify from the beginning.[/dim]"
+        )
+    if report.head:
+        console.print(f"[dim]head:[/dim] {report.head}")
 
 
 @app.command()

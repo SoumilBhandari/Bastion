@@ -60,11 +60,17 @@ def tail_records(
         if should_stop and should_stop():
             return
         try:
+            # A log that shrank was rotated or truncated out from under us; the
+            # saved offset now points past the end of a different file, so start
+            # over rather than following nothing forever.
+            if path.stat().st_size < position:
+                position = 0
+                buffer = ""
             with path.open("r", encoding="utf-8") as handle:
                 handle.seek(position)
                 chunk = handle.read()
                 position = handle.tell()
-        except FileNotFoundError:
+        except (FileNotFoundError, OSError):
             sleep(poll_interval)
             continue
         if not chunk:

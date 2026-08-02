@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from bastion.audit import AuditRecord, AuditWriter
+from bastion.audit import AuditRecord, AuditWriter, rotated_paths
 
 
 def test_audit_record_generates_id_and_timestamp() -> None:
@@ -47,3 +47,62 @@ def test_audit_writer_creates_parent_directories(tmp_path: Path) -> None:
     log = tmp_path / "nested" / "dir" / "audit.jsonl"
     AuditWriter(log).write(AuditRecord(tool="x"))
     assert log.is_file()
+
+
+def test_audit_writer_flushes_each_record_immediately(tmp_path: Path) -> None:
+    """A crashed gateway must still leave every record it claimed to write."""
+    log = tmp_path / "audit.jsonl"
+    writer = AuditWriter(log)
+    writer.write(AuditRecord(tool="a"))
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_audit_writer_fsyncs_when_asked(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    with AuditWriter(log, fsync=True) as writer:
+        writer.write(AuditRecord(tool="a"))
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_audit_writer_rotates_past_the_size_limit(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    writer = AuditWriter(log, max_bytes=200, keep=3)
+    for index in range(20):
+        writer.write(AuditRecord(tool=f"t{index}"))
+    writer.close()
+    assert log.with_name("audit.jsonl.1").is_file()
+    assert log.stat().st_size <= 200
+
+
+def test_audit_writer_keeps_only_the_requested_generations(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    writer = AuditWriter(log, max_bytes=150, keep=2)
+    for index in range(40):
+        writer.write(AuditRecord(tool=f"t{index}"))
+    writer.close()
+    assert log.with_name("audit.jsonl.2").is_file()
+    assert not log.with_name("audit.jsonl.3").exists()
+
+
+def test_audit_writer_rotation_is_off_by_default(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    writer = AuditWriter(log, max_bytes=None)
+    for index in range(50):
+        writer.write(AuditRecord(tool=f"t{index}"))
+    writer.close()
+    assert not log.with_name("audit.jsonl.1").exists()
+
+
+def test_rotated_paths_are_returned_oldest_first(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    for generation in (1, 2, 3):
+        log.with_name(f"audit.jsonl.{generation}").write_text("{}\n", encoding="utf-8")
+    assert [p.name for p in rotated_paths(log)] == [
+        "audit.jsonl.3",
+        "audit.jsonl.2",
+        "audit.jsonl.1",
+    ]
+
+
+def test_rotated_paths_is_empty_when_nothing_rotated(tmp_path: Path) -> None:
+    assert rotated_paths(tmp_path / "audit.jsonl") == []
