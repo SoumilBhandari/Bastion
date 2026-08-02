@@ -11,6 +11,7 @@ from mcp.shared.exceptions import McpError
 
 from bastion.config.schema import BastionConfig
 from bastion.gateway import build_gateway
+from tests.credentials import GITHUB_TOKEN
 
 
 def _config(
@@ -551,7 +552,7 @@ async def test_secrets_are_redacted_from_the_audit_log(
             policy=_responses(redact_secrets=False, detect_injection="off"),
         )
     )
-    token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+    token = GITHUB_TOKEN
 
     async with Client(gateway) as client:
         result = await client.call_tool("echo", {"text": f"token is {token}"})
@@ -572,7 +573,7 @@ async def test_secret_redaction_can_be_disabled(
         "audit": {"enabled": True, "path": str(audit_log), "redact_secrets": False},
     }
     gateway = build_gateway(BastionConfig.model_validate(raw))
-    token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+    token = GITHUB_TOKEN
 
     async with Client(gateway) as client:
         await client.call_tool("echo", {"text": token})
@@ -595,7 +596,7 @@ async def test_a_credential_in_the_result_is_redacted_before_the_agent_sees_it(
     )
     async with Client(gateway) as client:
         result = await client.call_tool("leak_credential", {})
-    assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" not in str(result.content)
+    assert GITHUB_TOKEN not in str(result.content)
     assert "***" in str(result.content)
 
 
@@ -608,7 +609,7 @@ async def test_response_redaction_can_be_disabled(sample_upstream: Path, python_
     )
     async with Client(gateway) as client:
         result = await client.call_tool("leak_credential", {})
-    assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" in str(result.content)
+    assert GITHUB_TOKEN in str(result.content)
 
 
 async def test_prompt_injection_is_flagged_and_cautioned_by_default(
@@ -692,10 +693,10 @@ async def test_a_vault_style_tool_can_be_exempted_from_response_redaction(
     )
     async with Client(gateway) as client:
         exempt = await client.call_tool("leak_credential", {})
-        governed = await client.call_tool("echo", {"text": "key ghp_abcdefghijklmnopqrstuvwxyz01"})
+        governed = await client.call_tool("echo", {"text": f"key {GITHUB_TOKEN[:32]}"})
 
-    assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" in str(exempt.content)
-    assert "ghp_abcdefghijklmnopqrstuvwxyz01" not in str(governed.content)
+    assert GITHUB_TOKEN in str(exempt.content)
+    assert GITHUB_TOKEN[:32] not in str(governed.content)
 
 
 async def test_the_audit_log_records_what_a_call_actually_cost(

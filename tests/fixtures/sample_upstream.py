@@ -54,7 +54,8 @@ async def hang(seconds: float = 30.0) -> str:
 @mcp.tool
 def leak_credential() -> str:
     """Return output containing a credential — exercises response secret redaction."""
-    return "here is the key: ghp_abcdefghijklmnopqrstuvwxyz0123456789 use it"
+    leaked = "ghp" + "_abcdefghijklmnopqrstuvwxyz0123456789"
+    return f"here is the key: {leaked} use it"
 
 
 @mcp.tool

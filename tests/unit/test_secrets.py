@@ -9,20 +9,9 @@ from bastion.policy.secrets import (
     redact_structure,
     redact_text,
 )
+from tests.credentials import ANTHROPIC_API_KEY, AWS_ACCESS_KEY_ID, BY_DETECTOR
 
-CREDENTIALS = [
-    ("aws-access-key-id", "AKIAIOSFODNN7EXAMPLE"),
-    ("github-token", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"),
-    ("github-fine-grained-token", "github_pat_11ABCDEFG0abcdefghijklmnop"),
-    ("slack-token", "xox" "b-123456789012-abcdefghijklmno"),
-    ("google-api-key", "AIza" + "SyA1234567890abcdefghijklmnopqrstuv"),  # AIza + exactly 35
-    ("stripe-key", "sk" "_live_abcdefghij0123456789ABCD"),
-    ("anthropic-api-key", "sk-ant-api03-abcdefghijklmnopqrst"),
-    ("openai-style-api-key", "sk-proj-abcdefghijklmnopqrstuvwx"),
-    ("private-key-block", "-----BEGIN OPENSSH PRIVATE KEY-----"),
-    ("bearer-token", "Bearer abcdefghijklmnopqrstuvwxyz012345"),
-    ("basic-auth-header", "Basic YWxhZGRpbjpvcGVuc2VzYW1l1234"),
-]
+CREDENTIALS = BY_DETECTOR
 
 INNOCENT = [
     "Please read the file at /var/log/system.log and summarise it.",
@@ -62,7 +51,7 @@ def test_url_credentials_keep_the_scheme_and_host() -> None:
 
 
 def test_anthropic_key_is_not_also_reported_as_openai() -> None:
-    assert find_secrets("sk-ant-api03-abcdefghijklmnopqrst") == ["anthropic-api-key"]
+    assert find_secrets(ANTHROPIC_API_KEY) == ["anthropic-api-key"]
 
 
 def test_sensitive_key_names_are_redacted_whole() -> None:
@@ -81,7 +70,7 @@ def test_ordinary_key_names_survive() -> None:
 
 def test_redaction_recurses_into_nested_structures() -> None:
     redacted = redact_structure(
-        {"outer": {"inner": ["prefix", "AKIAIOSFODNN7EXAMPLE"], "creds": {"secret": "v"}}}
+        {"outer": {"inner": ["prefix", AWS_ACCESS_KEY_ID], "creds": {"secret": "v"}}}
     )
     assert redacted["outer"]["inner"] == ["prefix", REDACTED]
     assert redacted["outer"]["creds"]["secret"] == REDACTED
@@ -105,14 +94,14 @@ def test_non_string_leaves_are_preserved() -> None:
 
 def test_a_credential_in_an_enormous_result_is_still_caught() -> None:
     """Size must not be a way to smuggle a credential past the scanner."""
-    huge = "AKIAIOSFODNN7EXAMPLE " + "x" * 2_000_000
+    huge = AWS_ACCESS_KEY_ID + " " + "x" * 2_000_000
     assert find_secrets(huge) == ["aws-access-key-id"]
-    assert "AKIAIOSFODNN7EXAMPLE" not in redact_text(huge)
+    assert AWS_ACCESS_KEY_ID not in redact_text(huge)
 
 
 def test_scanning_stops_at_the_limit() -> None:
     """Scanning is linear, so an unbounded result would stall the gateway."""
-    beyond = "x" * (SCAN_LIMIT + 10) + " AKIAIOSFODNN7EXAMPLE"
+    beyond = "x" * (SCAN_LIMIT + 10) + " " + AWS_ACCESS_KEY_ID
     assert find_secrets(beyond) == []
 
 
