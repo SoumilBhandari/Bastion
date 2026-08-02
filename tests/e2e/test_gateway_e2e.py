@@ -33,6 +33,13 @@ def _config(
         raw["cost"] = cost
     if timeouts is not None:
         raw["timeouts"] = timeouts
+
+    # These configs are validated directly rather than loaded from a file, so
+    # nothing anchors their relative paths — pinning would default to
+    # ./bastion-pins.json and write into whatever directory pytest ran from.
+    # Pinning has its own suite; switch it off everywhere else.
+    raw.setdefault("policy", {})
+    raw["policy"].setdefault("pinning", {"enabled": False})
     return BastionConfig.model_validate(raw)
 
 
@@ -571,6 +578,7 @@ async def test_secret_redaction_can_be_disabled(
     raw = {
         "upstreams": _stdio(python_exe, sample_upstream),
         "audit": {"enabled": True, "path": str(audit_log), "redact_secrets": False},
+        "policy": {"pinning": {"enabled": False}},
     }
     gateway = build_gateway(BastionConfig.model_validate(raw))
     token = GITHUB_TOKEN
