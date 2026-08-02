@@ -186,11 +186,17 @@ class PolicyConfig(BaseModel):
 
     Permission rules are matched against tool names by glob; when several match
     a tool, the most specific wins. When none match, ``default`` applies.
+
+    ``hide_denied`` also removes denied entries from ``tools/list`` and the
+    resource and prompt listings, so the agent is never offered something it
+    cannot use. Turn it off to leave listings untouched and let the agent
+    discover the denial by being refused.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     default: Action = "allow"
+    hide_denied: bool = True
     permissions: list[PermissionRule] = Field(default_factory=list)
     rate_limits: list[RateLimitRule] = Field(default_factory=list)
     budgets: list[BudgetRule] = Field(default_factory=list)

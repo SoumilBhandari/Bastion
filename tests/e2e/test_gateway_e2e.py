@@ -366,3 +366,106 @@ async def test_gateway_redacts_arguments_in_audit_log(
     records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
     assert records[0]["arguments"] == {"text": "***"}
     assert records[0]["outcome"] == "ok"
+
+
+# ------------- policy-filtered listings -------------
+
+
+async def test_denied_tools_are_hidden_from_the_listing(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={"default": "allow", "permissions": [{"tool": "delete_thing", "action": "deny"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        names = {tool.name for tool in await client.list_tools()}
+    assert "delete_thing" not in names
+    assert "echo" in names
+
+
+async def test_default_deny_hides_every_tool_but_the_allowlist(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={"default": "deny", "permissions": [{"tool": "echo", "action": "allow"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        names = {tool.name for tool in await client.list_tools()}
+    assert names == {"echo"}
+
+
+async def test_hidden_tools_are_still_blocked_when_called_directly(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    """Filtering is presentation; the call-time check is what enforces policy."""
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={"default": "allow", "permissions": [{"tool": "delete_thing", "action": "deny"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        with pytest.raises(ToolError, match="Bastion policy"):
+            await client.call_tool("delete_thing", {"name": "x"})
+
+
+async def test_listing_filter_can_be_turned_off(sample_upstream: Path, python_exe: str) -> None:
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={
+            "default": "allow",
+            "hide_denied": False,
+            "permissions": [{"tool": "delete_thing", "action": "deny"}],
+        },
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        names = {tool.name for tool in await client.list_tools()}
+    assert "delete_thing" in names
+
+
+async def test_denied_resources_are_hidden_from_the_listing(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={"default": "allow", "permissions": [{"tool": "data://secret", "action": "deny"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        uris = {str(resource.uri) for resource in await client.list_resources()}
+    assert "data://secret" not in uris
+
+
+async def test_denied_prompts_are_hidden_from_the_listing(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        policy={"default": "allow", "permissions": [{"tool": "greeting", "action": "deny"}]},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        names = {prompt.name for prompt in await client.list_prompts()}
+    assert "greeting" not in names
+
+
+async def test_allowed_tools_are_listed_unchanged(sample_upstream: Path, python_exe: str) -> None:
+    """Filtering must not alter the tools it keeps."""
+    plain = build_gateway(_config(_stdio(python_exe, sample_upstream)))
+    async with Client(plain) as client:
+        before = {t.name: t.description for t in await client.list_tools()}
+
+    filtered = build_gateway(
+        _config(
+            _stdio(python_exe, sample_upstream),
+            policy={"default": "allow", "permissions": [{"tool": "boom", "action": "deny"}]},
+        )
+    )
+    async with Client(filtered) as client:
+        after = {t.name: t.description for t in await client.list_tools()}
+
+    assert after == {name: desc for name, desc in before.items() if name != "boom"}

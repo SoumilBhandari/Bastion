@@ -69,5 +69,5 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
                 redact_fn=engine.redact_arguments,
             )
         )
-    gateway.add_middleware(PolicyMiddleware(engine))
+    gateway.add_middleware(PolicyMiddleware(engine, hide_denied=config.policy.hide_denied))
     return gateway
