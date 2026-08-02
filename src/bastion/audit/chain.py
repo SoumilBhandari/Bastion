@@ -104,6 +104,23 @@ def verify_records(records: Iterable[Mapping[str, Any]]) -> ChainReport:
 
         if expected_prev is None:
             report.starts_at_genesis = prev == GENESIS
+            # A chain that opens mid-stream cannot legitimately sit behind
+            # unchained records. When chaining is switched on, the writer starts
+            # a fresh chain at genesis, so unchained history is always followed
+            # by a genesis link. Anything else means the records in between were
+            # chained once and had their chain fields stripped — the cheapest way
+            # to rewrite a prefix of the log while the tail still verifies and
+            # the head hash is unchanged.
+            if report.unchained and prev != GENESIS:
+                report.breaks.append(
+                    ChainBreak(
+                        index,
+                        call_id,
+                        f"{report.unchained} record(s) before this one carry no hash, but this "
+                        "one continues a chain — their chain fields were removed",
+                    )
+                )
+                break
         elif prev != expected_prev:
             report.breaks.append(
                 ChainBreak(

@@ -13,6 +13,7 @@ _OUTCOME_STYLES = {
     "ok": "[green]ok[/green]",
     "denied": "[yellow]denied[/yellow]",
     "error": "[red]error[/red]",
+    "cancelled": "[magenta]cancelled[/magenta]",
 }
 
 

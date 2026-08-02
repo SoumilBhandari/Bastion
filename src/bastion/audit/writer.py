@@ -47,7 +47,7 @@ class AuditWriter:
         self._max_bytes = max_bytes if max_bytes and max_bytes > 0 else None
         self._keep = max(keep, 0)
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._prev = _last_hash(path) if hash_chain else GENESIS
+        self._prev = _resume_hash(path) if hash_chain else GENESIS
         self._handle: IO[str] | None = None
         self._size = path.stat().st_size if path.exists() else 0
 
@@ -138,13 +138,39 @@ def rotated_paths(path: Path, keep: int = 64) -> list[Path]:
     return found
 
 
+def _resume_hash(path: Path) -> str:
+    """The hash to chain the next record to, across rotations.
+
+    Rotation leaves the active log empty, so a gateway that restarts in that
+    window would find nothing to resume from and begin a second chain at
+    genesis — breaking the promise that rotated generations verify as one
+    sequence. When the active log holds no chained record, the most recent
+    rotated generation is consulted instead.
+    """
+    resumed = _last_hash(path)
+    if resumed != GENESIS:
+        return resumed
+    for rotated in reversed(rotated_paths(path)):  # newest generation first
+        resumed = _last_hash(rotated)
+        if resumed != GENESIS:
+            return resumed
+    return GENESIS
+
+
 def _last_hash(path: Path) -> str:
     """Read the last record's hash from an existing log, to resume its chain.
 
-    Reads only the tail of the file, so restarting the gateway does not cost a
-    full scan of a log that may be gigabytes long. A log with no usable trailing
-    record — missing, empty, or never chained — starts a fresh chain at the
-    genesis value.
+    Starts from the tail, so restarting the gateway does not cost a full scan of
+    a log that may be gigabytes long, but widens the window until it finds a
+    complete record or reaches the start of the file. A fixed window would break
+    on a single record longer than it: arguments are logged by default and are
+    unbounded, so one tool call carrying a large document would leave the whole
+    window inside that one line, find nothing, and silently begin a second chain
+    at genesis in the middle of the log — which every later verification would
+    report as tampering that never happened.
+
+    A log with no usable trailing record — missing, empty, or never chained —
+    legitimately starts a fresh chain at the genesis value.
     """
     try:
         size = path.stat().st_size
@@ -153,21 +179,33 @@ def _last_hash(path: Path) -> str:
     if size == 0:
         return GENESIS
 
-    try:
-        with path.open("rb") as handle:
-            handle.seek(max(0, size - _TAIL_SCAN_BYTES))
-            tail = handle.read()
-    except OSError:
-        return GENESIS
-
-    for raw in reversed(tail.split(b"\n")):
-        line = raw.strip()
-        if not line:
-            continue
+    window = _TAIL_SCAN_BYTES
+    while True:
+        start = max(0, size - window)
         try:
-            value = json.loads(line)
-        except (UnicodeDecodeError, ValueError):
-            continue
-        if isinstance(value, dict) and isinstance(value.get(HASH_FIELD), str):
-            return str(value[HASH_FIELD])
-    return GENESIS
+            with path.open("rb") as handle:
+                handle.seek(start)
+                tail = handle.read()
+        except OSError:
+            return GENESIS
+
+        lines = tail.split(b"\n")
+        # Unless the window reaches the start of the file, the first element is
+        # the tail of a record that began before it — not a record of its own.
+        if start > 0:
+            lines = lines[1:]
+
+        for raw in reversed(lines):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                value = json.loads(line)
+            except (UnicodeDecodeError, ValueError):
+                continue
+            if isinstance(value, dict) and isinstance(value.get(HASH_FIELD), str):
+                return str(value[HASH_FIELD])
+
+        if start == 0:
+            return GENESIS
+        window *= 4

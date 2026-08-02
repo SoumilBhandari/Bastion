@@ -1,9 +1,16 @@
-"""Unit tests for the audit middleware's result inspection."""
+"""Unit tests for the audit middleware."""
 
+import asyncio
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
-from bastion.middleware.audit_mw import _result_error
+from bastion.audit import AuditWriter
+from bastion.middleware.audit_mw import AuditMiddleware, _result_error
 
 
 def _text(value: str) -> TextContent:
@@ -38,3 +45,27 @@ def test_error_message_is_truncated() -> None:
 def test_non_tool_results_are_never_errors() -> None:
     assert _result_error(["some", "resource", "contents"]) is None
     assert _result_error(None) is None
+
+
+# ------------- cancellation -------------
+
+
+async def test_a_cancelled_call_is_not_recorded_as_a_success(tmp_path: Path) -> None:
+    """A client disconnect cancels in-flight calls; the log must not claim they succeeded."""
+    log = tmp_path / "audit.jsonl"
+    middleware = AuditMiddleware(AuditWriter(log), redact_secrets=False)
+
+    async def never_finishes(_: object) -> ToolResult:
+        await asyncio.sleep(30)
+        raise AssertionError("unreachable")
+
+    context = SimpleNamespace(message=SimpleNamespace(name="payments_transfer", arguments={}))
+    task = asyncio.create_task(middleware.on_call_tool(context, never_finishes))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    record = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
+    assert record["outcome"] == "cancelled"
+    assert record["error"]

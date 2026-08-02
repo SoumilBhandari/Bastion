@@ -5,7 +5,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
-from bastion.audit import AuditRecord, AuditWriter
+from bastion.audit import AuditRecord, AuditWriter, rotated_paths
 from bastion.audit.chain import GENESIS, record_hash, verify_records
 
 
@@ -147,3 +147,85 @@ def test_chaining_can_be_disabled(tmp_path: Path) -> None:
     log = tmp_path / "audit.jsonl"
     _write(log, 1, hash_chain=False)
     assert "hash" not in _read(log)[0]
+
+
+# ------------- tampering that hides behind the "unchained" allowance -------------
+
+
+def test_stripping_chain_fields_from_leading_records_is_detected(tmp_path: Path) -> None:
+    """The cheapest rewrite: drop hash/prev from a prefix so the tail still verifies."""
+    log = tmp_path / "audit.jsonl"
+    _write(log, 4)
+    records = _read(log)
+    for record in records[:2]:
+        del record["hash"]
+        del record["prev"]
+        record["tool"] = "innocuous"
+
+    report = verify_records(records)
+    assert not report.ok
+    assert "chain fields were removed" in report.breaks[0].reason
+
+
+def test_a_wholly_unchained_log_is_still_accepted(tmp_path: Path) -> None:
+    """A log written before chaining was switched on is not evidence of tampering."""
+    log = tmp_path / "audit.jsonl"
+    _write(log, 2, hash_chain=False)
+    assert verify_records(_read(log)).ok
+
+
+def test_chaining_switched_on_midway_is_accepted(tmp_path: Path) -> None:
+    """Unchained history followed by a fresh chain at genesis is legitimate."""
+    log = tmp_path / "audit.jsonl"
+    _write(log, 2, hash_chain=False)
+    _write(log, 2)
+
+    report = verify_records(_read(log))
+    assert report.ok
+    assert report.unchained == 2
+    assert report.checked == 2
+
+
+def test_deleting_leading_records_leaves_the_chain_starting_mid_stream(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    _write(log, 4)
+    records = _read(log)[2:]
+
+    report = verify_records(records)
+    assert not report.starts_at_genesis
+
+
+# ------------- resuming the chain -------------
+
+
+def test_a_record_larger_than_the_tail_window_does_not_restart_the_chain(
+    tmp_path: Path,
+) -> None:
+    """Arguments are unbounded; one big record must not silently begin a new chain."""
+    log = tmp_path / "audit.jsonl"
+    with AuditWriter(log, max_bytes=None) as writer:
+        writer.write(AuditRecord(tool="small"))
+        writer.write(AuditRecord(tool="big", arguments={"doc": "x" * 400_000}))
+
+    with AuditWriter(log, max_bytes=None) as writer:  # a gateway restart
+        writer.write(AuditRecord(tool="after"))
+
+    report = verify_records(_read(log))
+    assert report.ok, [str(b) for b in report.breaks]
+    assert report.checked == 3
+
+
+def test_restarting_straight_after_a_rotation_continues_the_chain(tmp_path: Path) -> None:
+    """Rotation leaves the active log empty; the chain must resume from the rotation."""
+    log = tmp_path / "audit.jsonl"
+    with AuditWriter(log, max_bytes=250, keep=3) as writer:
+        for index in range(20):
+            writer.write(AuditRecord(tool=f"t{index}"))
+    assert log.read_text(encoding="utf-8") == "" or log.stat().st_size < 250
+
+    with AuditWriter(log, max_bytes=250, keep=3) as writer:  # a gateway restart
+        writer.write(AuditRecord(tool="after_restart"))
+
+    combined = [r for path in [*rotated_paths(log), log] for r in _read(path)]
+    report = verify_records(combined)
+    assert report.ok, [str(b) for b in report.breaks]

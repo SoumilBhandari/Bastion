@@ -213,11 +213,22 @@ def doctor(config: ConfigOption = None) -> None:
         console.print(f"  [dim]-[/dim] {cfg.audit.path} does not exist yet")
     else:
         report = verify_records(read_records(cfg.audit.path))
-        if report.ok:
-            console.print(f"  [green]✓[/green] {report.checked} records, chain intact")
-        else:
+        if not report.ok:
             problems += 1
             console.print(f"  [red]✗[/red] chain broken at {report.breaks[0]}")
+        elif not report.starts_at_genesis and not rotated_paths(cfg.audit.path):
+            problems += 1
+            console.print(
+                "  [red]✗[/red] the chain does not start at its beginning and nothing "
+                "was rotated — records were removed from the front of the log"
+            )
+        else:
+            console.print(f"  [green]✓[/green] {report.checked} records, chain intact")
+            if report.unchained:
+                console.print(
+                    f"  [yellow]![/yellow] {report.unchained} record(s) carry no hash and "
+                    "were not verified"
+                )
 
     console.print("\n[bold]advice[/bold]")
     advice = _review_settings(cfg)
@@ -460,7 +471,14 @@ def verify(
         return
 
     report = verify_records(records)
-    console = Console(stderr=not report.ok)
+
+    # A chain that does not open at genesis is missing its beginning. Rotation
+    # explains that; nothing else does. Treating it as merely informational let
+    # deleting the front of a log pass as "OK", which is precisely the edit
+    # someone covering their tracks would make.
+    unexplained_start = not report.starts_at_genesis and not rotated_paths(path)
+    failed = not report.ok or unexplained_start
+    console = Console(stderr=failed)
 
     if not report.ok:
         console.print(f"[red]FAILED[/red] — the audit log at {path} does not verify:")
@@ -469,6 +487,14 @@ def verify(
         console.print(
             "\n[dim]Everything before the first break is intact. Records after it "
             "cannot be trusted.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    if unexplained_start:
+        console.print(
+            f"[red]FAILED[/red] — the chain in {path} does not start at its beginning, and "
+            "there are no rotated generations to account for it. Records were removed "
+            "from the front of the log."
         )
         raise typer.Exit(code=1)
 

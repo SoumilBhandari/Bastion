@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -105,6 +106,15 @@ class AuditMiddleware(Middleware):
         except Exception as exc:
             record.outcome = "error"
             record.error = str(exc)
+            raise
+        except asyncio.CancelledError:
+            # CancelledError derives from BaseException, so it slips past the
+            # clause above. Without this the record keeps its default "ok" and
+            # the log attests to a call that never finished — which happens on
+            # every in-flight call when a client disconnects or sends
+            # notifications/cancelled.
+            record.outcome = "cancelled"
+            record.error = "the call was cancelled before it completed"
             raise
         else:
             if (message := _result_error(result)) is not None:

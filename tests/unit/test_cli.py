@@ -223,6 +223,11 @@ def test_run_http_warns_on_non_loopback_host(tmp_path: Path, monkeypatch) -> Non
 # ------------- verify -------------
 
 
+def _flat(text: str) -> str:
+    """Collapse Rich's line wrapping so assertions can match whole phrases."""
+    return " ".join(text.split())
+
+
 def _seed_chained_audit(audit_path: Path, count: int = 3) -> None:
     from bastion.audit import AuditRecord, AuditWriter
 
@@ -451,3 +456,51 @@ def test_doctor_reports_a_broken_audit_chain(tmp_path: Path) -> None:
     result = runner.invoke(app, ["doctor", "--config", str(config)])
 
     assert "chain broken" in result.output
+
+
+def test_verify_rejects_a_log_whose_front_was_deleted(tmp_path: Path) -> None:
+    """Removing the oldest records must not pass as OK."""
+    audit = tmp_path / "audit.jsonl"
+    config = _write_config(tmp_path, audit_path=audit)
+    _seed_chained_audit(audit, count=4)
+    lines = audit.read_text(encoding="utf-8").splitlines()[2:]
+    audit.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["verify", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert "removed from the front" in _flat(result.output)
+
+
+def test_verify_rejects_a_laundered_prefix(tmp_path: Path) -> None:
+    """Stripping hash/prev from leading records must not pass as OK."""
+    audit = tmp_path / "audit.jsonl"
+    config = _write_config(tmp_path, audit_path=audit)
+    _seed_chained_audit(audit, count=4)
+
+    records = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
+    for record in records[:2]:
+        del record["hash"]
+        del record["prev"]
+    audit.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["verify", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert "chain fields were removed" in _flat(result.output)
+
+
+def test_doctor_reports_a_log_whose_front_was_deleted(tmp_path: Path) -> None:
+    audit = tmp_path / "audit.jsonl"
+    _seed_chained_audit(audit, count=4)
+    lines = audit.read_text(encoding="utf-8").splitlines()[2:]
+    audit.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    config = tmp_path / "bastion.yaml"
+    config.write_text(
+        f"upstreams:\n  a:\n    command: /nonexistent\naudit:\n  path: {audit.as_posix()}\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["doctor", "--config", str(config)])
+
+    assert "removed from the front" in _flat(result.output)
