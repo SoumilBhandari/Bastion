@@ -19,6 +19,7 @@ from mcp.types import (
 from bastion.audit.record import AuditRecord
 from bastion.audit.writer import AuditWriter
 from bastion.policy.models import PolicyDenied
+from bastion.policy.secrets import redact_structure
 
 RedactFn = Callable[[str, dict[str, Any]], dict[str, Any]]
 _R = TypeVar("_R")
@@ -48,9 +49,10 @@ def _result_error(result: Any) -> str | None:
 class AuditMiddleware(Middleware):
     """Writes one audit record for every tool call, resource read, and prompt fetch.
 
-    When ``redact_fn`` is provided it is applied to arguments before they are
-    written, so guard ``redact`` rules keep secrets out of the log without
-    changing what the upstream actually receives.
+    Arguments are redacted before they are written, so neither built-in secret
+    detection nor a guard ``redact`` rule changes what the upstream actually
+    receives — only what is committed to disk. Built-in detection runs first,
+    then ``redact_fn`` for the operator's own rules.
     """
 
     def __init__(
@@ -59,16 +61,20 @@ class AuditMiddleware(Middleware):
         *,
         log_arguments: bool = True,
         redact_fn: RedactFn | None = None,
+        redact_secrets: bool = True,
     ) -> None:
         super().__init__()
         self._writer = writer
         self._log_arguments = log_arguments
         self._redact_fn = redact_fn
+        self._redact_secrets = redact_secrets
 
     def _arguments(self, name: str, raw: Any) -> dict[str, Any] | None:
         if not raw:
             return None
-        arguments = dict(raw)
+        arguments: dict[str, Any] = dict(raw)
+        if self._redact_secrets:
+            arguments = redact_structure(arguments)
         if self._redact_fn is not None:
             arguments = self._redact_fn(name, arguments)
         return arguments

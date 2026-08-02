@@ -68,6 +68,8 @@ class GatewaySettings(BaseModel):
 class AuditConfig(BaseModel):
     """Whether, where, and how durably the gateway writes its audit log.
 
+    ``redact_secrets`` masks recognized credentials in logged arguments, so the
+    audit log does not quietly become a plaintext credential file.
     ``hash_chain`` links each record to the one before it, so edits to the log
     are detectable. ``fsync`` forces each record to physical disk before the
     call proceeds — correct across a power loss, but it costs a disk round trip
@@ -79,6 +81,7 @@ class AuditConfig(BaseModel):
     enabled: bool = True
     path: Path = Path("bastion-audit.jsonl")
     log_arguments: bool = True
+    redact_secrets: bool = True
     hash_chain: bool = True
     fsync: bool = False
     max_bytes: int | None = Field(default=100_000_000, ge=1)

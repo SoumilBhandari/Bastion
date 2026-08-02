@@ -534,3 +534,40 @@ async def test_timeouts_can_be_disabled(sample_upstream: Path, python_exe: str) 
     async with Client(gateway) as client:
         result = await client.call_tool("hang", {"seconds": 0.1})
     assert result.data == "finally done"
+
+
+# ------------- built-in secret redaction -------------
+
+
+async def test_secrets_are_redacted_from_the_audit_log(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    gateway = build_gateway(_config(_stdio(python_exe, sample_upstream), audit_path=audit_log))
+    token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+
+    async with Client(gateway) as client:
+        result = await client.call_tool("echo", {"text": f"token is {token}"})
+
+    # The upstream saw the real value; only the log is redacted.
+    assert token in str(result.data)
+    logged = audit_log.read_text(encoding="utf-8")
+    assert token not in logged
+    assert "***" in logged
+
+
+async def test_secret_redaction_can_be_disabled(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    raw = {
+        "upstreams": _stdio(python_exe, sample_upstream),
+        "audit": {"enabled": True, "path": str(audit_log), "redact_secrets": False},
+    }
+    gateway = build_gateway(BastionConfig.model_validate(raw))
+    token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+
+    async with Client(gateway) as client:
+        await client.call_tool("echo", {"text": token})
+
+    assert token in audit_log.read_text(encoding="utf-8")
