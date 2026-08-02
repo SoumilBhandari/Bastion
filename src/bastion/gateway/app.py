@@ -16,11 +16,13 @@ from bastion.config.schema import BastionConfig, Upstream
 from bastion.middleware import (
     AuditMiddleware,
     ErrorBoundary,
+    PinningMiddleware,
     PolicyMiddleware,
     ResponseGuardMiddleware,
     TimeoutMiddleware,
 )
 from bastion.policy import PolicyEngine
+from bastion.policy.pinning import PinChecker, PinStore
 from bastion.policy.responses import ResponseInspector
 
 GATEWAY_NAME = "bastion"
@@ -57,7 +59,7 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
 
     The chain runs outermost-first::
 
-        ErrorBoundary → Audit → Policy → ResponseGuard → Timeout → upstream
+        ErrorBoundary → Audit → Pinning → Policy → ResponseGuard → Timeout → upstream
 
     Audit sits outside Policy so denials are recorded, and Timeout sits inside
     Policy so the clock covers only the upstream call — a request that waits on
@@ -69,6 +71,7 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
     gateway = create_proxy(build_mcp_config(config), name=GATEWAY_NAME)
     gateway.add_middleware(ErrorBoundary())
     engine = PolicyEngine(config.policy, cost=config.cost)
+    writer: AuditWriter | None = None
     if config.audit.enabled:
         writer = AuditWriter(
             config.audit.path,
@@ -83,6 +86,15 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
                 log_arguments=config.audit.log_arguments,
                 redact_fn=engine.redact_arguments,
                 redact_secrets=config.audit.redact_secrets,
+            )
+        )
+    pinning = config.policy.pinning
+    if pinning.enabled:
+        gateway.add_middleware(
+            PinningMiddleware(
+                PinChecker(PinStore(pinning.path)),
+                block_on_change=pinning.on_change == "block",
+                writer=writer,
             )
         )
     gateway.add_middleware(PolicyMiddleware(engine, hide_denied=config.policy.hide_denied))

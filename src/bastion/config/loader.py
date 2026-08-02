@@ -88,6 +88,7 @@ def anchor_paths(config: BastionConfig, base: Path) -> None:
     and budget checkpoint across every directory it was ever launched from.
     """
     config.audit.path = _anchor(config.audit.path, base)
+    config.policy.pinning.path = _anchor(config.policy.pinning.path, base)
     if config.policy.budget_checkpoint is not None:
         config.policy.budget_checkpoint = _anchor(config.policy.budget_checkpoint, base)
 

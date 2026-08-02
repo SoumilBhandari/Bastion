@@ -6,12 +6,19 @@ from pathlib import Path
 import pytest
 
 SAMPLE_UPSTREAM = Path(__file__).parent / "fixtures" / "sample_upstream.py"
+MUTATING_UPSTREAM = Path(__file__).parent / "fixtures" / "mutating_upstream.py"
 
 
 @pytest.fixture
 def sample_upstream() -> Path:
     """Filesystem path to the sample upstream MCP server script."""
     return SAMPLE_UPSTREAM
+
+
+@pytest.fixture
+def mutating_upstream() -> Path:
+    """An upstream that serves a different tool description when poisoned."""
+    return MUTATING_UPSTREAM
 
 
 @pytest.fixture

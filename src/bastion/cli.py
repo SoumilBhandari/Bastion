@@ -1,5 +1,6 @@
 """The bastion command-line interface."""
 
+import asyncio
 import fnmatch
 from pathlib import Path
 from typing import Annotated
@@ -12,6 +13,8 @@ from bastion.audit import iter_records, read_records, rotated_paths, tail_record
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
 from bastion.dashboard import run_dashboard
 from bastion.gateway import build_gateway
+from bastion.gateway.app import build_mcp_config
+from bastion.policy.pinning import PinChecker, PinStore, ToolFingerprint
 from bastion.viewer import format_record_line, render_records_table, render_stats
 
 app = typer.Typer(
@@ -183,6 +186,77 @@ def init(
         raise typer.Exit(code=1)
     path.write_text(STARTER_CONFIG, encoding="utf-8")
     typer.echo(f"wrote {path}")
+
+
+@app.command()
+def pin(
+    config: ConfigOption = None,
+    approve: Annotated[
+        bool,
+        typer.Option("--approve", help="Accept the current definitions, replacing the pins."),
+    ] = False,
+) -> None:
+    """Show tool definitions that changed since they were pinned, and re-approve them.
+
+    Connects to every configured upstream, fingerprints what it advertises, and
+    compares that against the pin file. Without --approve this only reports.
+    """
+    cfg = _load(config)
+    console = Console()
+    store = PinStore(cfg.policy.pinning.path)
+
+    try:
+        fingerprints = asyncio.run(_live_fingerprints(cfg))
+    except Exception as exc:
+        typer.echo(f"error: could not reach the upstreams: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if approve:
+        store.replace_all(fingerprints)
+        store.save()
+        console.print(f"[green]pinned[/green] {len(fingerprints)} tool definitions to {store.path}")
+        return
+
+    report = PinChecker(store).check(fingerprints)
+    if report.newly_pinned:
+        console.print(f"[dim]newly pinned:[/dim] {', '.join(sorted(report.newly_pinned))}")
+    if report.ok:
+        console.print(f"[green]OK[/green] — {report.unchanged} tool definitions match their pins.")
+        return
+
+    console.print(
+        f"[yellow]{len(report.drifted)} tool definition(s) changed since pinning:[/yellow]"
+    )
+    for drift in report.drifted:
+        console.print(f"\n  [yellow]·[/yellow] {drift.summary()}")
+        if drift.description_changed:
+            console.print(f"      [dim]pinned :[/dim] {_preview(drift.pinned_description)}")
+            console.print(f"      [dim]current:[/dim] {_preview(drift.current_description)}")
+    console.print(
+        "\n[dim]Review each change before accepting it — a tool description is an "
+        "instruction the agent will follow. Re-approve with `bastion pin --approve`.[/dim]"
+    )
+    raise typer.Exit(code=1)
+
+
+def _preview(text: str, limit: int = 160) -> str:
+    collapsed = " ".join(text.split())
+    return collapsed if len(collapsed) <= limit else collapsed[: limit - 1] + "…"
+
+
+async def _live_fingerprints(cfg: BastionConfig) -> list[ToolFingerprint]:
+    """Fingerprint every tool the configured upstreams currently advertise.
+
+    Talks to a bare proxy rather than the full gateway, so policy filtering
+    cannot hide a tool whose definition is exactly what we came to inspect.
+    """
+    from fastmcp import Client
+    from fastmcp.server import create_proxy
+
+    proxy = create_proxy(build_mcp_config(cfg), name="bastion-pin")
+    async with Client(proxy) as client:
+        tools = await client.list_tools()
+    return [ToolFingerprint.of(tool) for tool in tools]
 
 
 @app.command()
