@@ -78,14 +78,17 @@ class PolicyEngine:
             return PolicyDecision(allowed=False, reason=reason or "over budget")
         return permission
 
-    def reserve(self, tool: str) -> None:
+    def reserve(self, tool: str) -> float:
         """Consume rate-limit tokens and increment budget counters.
 
-        Call after :meth:`check` returned an allowed decision.
+        Call after :meth:`check` returned an allowed decision. Returns the cost
+        charged, so the caller can record what was actually spent rather than
+        what a call would have cost had it been allowed.
         """
         self._rate_limiter.reserve(tool)
         cost = self._cost_model.cost_for(tool)
         self._budgets.reserve(tool, cost)
+        return cost
 
     def check_permission(self, subject: str) -> PolicyDecision:
         """Permission-only decision for non-tool operations (resource URIs, prompt names).

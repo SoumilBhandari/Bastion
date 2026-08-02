@@ -14,7 +14,7 @@ from rich.table import Table
 from bastion import __version__
 from bastion.audit import iter_records, read_records, rotated_paths, tail_records, verify_records
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
-from bastion.dashboard import run_dashboard
+from bastion.dashboard import new_token, run_dashboard
 from bastion.gateway import build_gateway
 from bastion.gateway.app import build_mcp_config
 from bastion.policy import PolicyEngine
@@ -95,13 +95,28 @@ def dashboard(
     config: ConfigOption = None,
     host: Annotated[str, typer.Option(help="Host to bind the dashboard to.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to serve the dashboard on.")] = 8787,
+    no_token: Annotated[
+        bool,
+        typer.Option(
+            "--no-token",
+            help="Serve without an access token (only behind your own authenticating proxy).",
+        ),
+    ] = False,
 ) -> None:
     """Serve a local web dashboard that visualizes the audit log."""
     cfg = _load(config)
     _warn_if_exposed(host, "the dashboard")
-    typer.echo(f"Bastion dashboard -> http://{host}:{port}")
+    token = None if no_token else new_token()
+    suffix = f"/?t={token}" if token else "/"
+    typer.echo(f"Bastion dashboard -> http://{host}:{port}{suffix}")
     typer.echo(f"(reading audit log: {cfg.audit.path})")
-    run_dashboard(cfg, host=host, port=port)
+    if token is None:
+        typer.echo(
+            "warning: serving the audit log with no access token; anything that can "
+            "reach this port can read every argument your agent passed.",
+            err=True,
+        )
+    run_dashboard(cfg, host=host, port=port, token=token)
 
 
 @app.command()

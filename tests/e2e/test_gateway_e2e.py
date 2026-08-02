@@ -696,3 +696,28 @@ async def test_a_vault_style_tool_can_be_exempted_from_response_redaction(
 
     assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" in str(exempt.content)
     assert "ghp_abcdefghijklmnopqrstuvwxyz01" not in str(governed.content)
+
+
+async def test_the_audit_log_records_what_a_call_actually_cost(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    config = _config(
+        _stdio(python_exe, sample_upstream),
+        audit_path=audit_log,
+        policy={"default": "allow", "permissions": [{"tool": "delete_thing", "action": "deny"}]},
+        cost={"default_per_call": 0.001, "per_tool": {"add": 0.25}},
+    )
+    gateway = build_gateway(config)
+    async with Client(gateway) as client:
+        await client.call_tool("echo", {"text": "x"})
+        await client.call_tool("add", {"a": 1, "b": 1})
+        with pytest.raises(ToolError):
+            await client.call_tool("delete_thing", {"name": "x"})
+
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    by_tool = {r["tool"]: r for r in records}
+    assert by_tool["echo"]["cost"] == 0.001
+    assert by_tool["add"]["cost"] == 0.25
+    # A denied call never ran, so it was never charged.
+    assert by_tool["delete_thing"]["cost"] is None

@@ -18,7 +18,7 @@ from mcp.types import (
 
 from bastion.audit.record import AuditRecord
 from bastion.audit.writer import AuditWriter
-from bastion.policy import flags
+from bastion.policy import notes
 from bastion.policy.models import PolicyDenied
 from bastion.policy.secrets import redact_structure
 
@@ -95,7 +95,7 @@ class AuditMiddleware(Middleware):
             arguments=arguments if self._log_arguments else None,
         )
         start = time.monotonic()
-        token = flags.begin()
+        token = notes.begin()
         try:
             result = await call_next(context)
         except PolicyDenied as exc:
@@ -113,7 +113,9 @@ class AuditMiddleware(Middleware):
             return result
         finally:
             record.duration_ms = round((time.monotonic() - start) * 1000, 3)
-            record.flags = flags.end(token) or None
+            collected = notes.end(token)
+            record.flags = collected.flags or None
+            record.cost = collected.cost
             self._writer.write(record)
 
     async def on_call_tool(

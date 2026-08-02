@@ -8,7 +8,7 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import ToolResult
 from mcp.types import CallToolRequestParams
 
-from bastion.policy import flags
+from bastion.policy import notes
 from bastion.policy.injection import CAUTION
 from bastion.policy.models import PolicyDenied
 from bastion.policy.responses import ResponseInspector, ResponseVerdict
@@ -50,7 +50,7 @@ class ResponseGuardMiddleware(Middleware):
 
         verdict = self._inspector.inspect(tool, combined)
         if verdict.flags:
-            flags.record(verdict.flags)
+            notes.add_flags(verdict.flags)
 
         if not verdict.allowed:
             raise PolicyDenied(

@@ -20,6 +20,7 @@ from mcp.types import (
     ReadResourceRequestParams,
 )
 
+from bastion.policy import notes
 from bastion.policy.engine import PolicyEngine
 from bastion.policy.models import PolicyDenied
 
@@ -60,7 +61,7 @@ class PolicyMiddleware(Middleware):
         decision = self._engine.check(tool, arguments)
         if not decision.allowed:
             raise PolicyDenied(f"blocked by Bastion policy: {decision.reason}")
-        self._engine.reserve(tool)
+        notes.set_cost(self._engine.reserve(tool))
         return await call_next(context)
 
     async def on_read_resource(

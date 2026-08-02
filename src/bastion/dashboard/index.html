@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
 <link rel="icon" href="data:," />
 <title>Bastion &mdash; audit log</title>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --border: #30363d;
     --text: #e6edf3; --muted: #8b949e; --accent: #e3b341;
-    --ok: #3fb950; --err: #f85149;
+    --ok: #3fb950; --err: #f85149; --flag: #a371f7;
   }
   * { box-sizing: border-box; }
   body {
@@ -37,7 +38,12 @@
     70% { box-shadow: 0 0 0 7px rgba(63,185,80,0); }
     100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
   }
-  .stats { display: flex; gap: 14px; padding: 22px 28px; flex-wrap: wrap; }
+  .banner {
+    margin: 18px 28px 0; padding: 12px 16px; border-radius: 9px;
+    border: 1px solid var(--err); background: rgba(248,81,73,.1);
+    color: var(--err); font-size: 13px; display: none;
+  }
+  .stats { display: flex; gap: 14px; padding: 22px 28px 10px; flex-wrap: wrap; }
   .stat {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 10px; padding: 14px 22px; min-width: 126px;
@@ -51,7 +57,19 @@
   .stat.ok .num { color: var(--ok); }
   .stat.denied .num { color: var(--accent); }
   .stat.err .num { color: var(--err); }
-  .wrap { padding: 6px 28px 48px; }
+  .stat.flag .num { color: var(--flag); }
+  .controls {
+    display: flex; gap: 10px; padding: 4px 28px 14px; flex-wrap: wrap;
+    align-items: center;
+  }
+  .controls input, .controls select {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 7px; padding: 7px 11px; font-size: 13px; font-family: inherit;
+  }
+  .controls input { min-width: 240px; }
+  .controls input:focus, .controls select:focus { outline: 1px solid var(--accent); }
+  .controls .count { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .wrap { padding: 0 28px 48px; }
   table { width: 100%; border-collapse: collapse; }
   th {
     text-align: left; color: var(--muted); font-size: 11px;
@@ -68,8 +86,12 @@
     font-size: 13px;
   }
   .tool { color: var(--accent); font-weight: 600; }
+  .kind {
+    color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .5px;
+  }
   .args {
-    color: var(--muted); max-width: 440px;
+    color: var(--muted); max-width: 420px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .badge {
@@ -79,6 +101,12 @@
   .badge.ok { background: rgba(63,185,80,.14); color: var(--ok); }
   .badge.denied { background: rgba(227,179,65,.14); color: var(--accent); }
   .badge.error { background: rgba(248,81,73,.14); color: var(--err); }
+  .flags { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .flag {
+    display: inline-block; padding: 2px 8px; border-radius: 5px;
+    font-size: 11px; font-weight: 600;
+    background: rgba(163,113,247,.14); color: var(--flag);
+  }
   .msg { font-size: 12px; margin-top: 5px; }
   .msg.error { color: var(--err); }
   .msg.denied { color: var(--accent); }
@@ -92,7 +120,22 @@
     <span class="sub">audit log dashboard</span>
     <span class="live"><span class="dot"></span> live</span>
   </header>
+  <div class="banner" id="banner"></div>
   <div class="stats" id="stats"></div>
+  <div class="controls">
+    <input type="search" id="filter" placeholder="Filter by tool, argument, or flag&hellip;" />
+    <select id="outcome">
+      <option value="">All outcomes</option>
+      <option value="ok">Succeeded</option>
+      <option value="denied">Blocked</option>
+      <option value="error">Errored</option>
+    </select>
+    <select id="onlyFlagged">
+      <option value="">All calls</option>
+      <option value="1">Flagged only</option>
+    </select>
+    <span class="count" id="count"></span>
+  </div>
   <div class="wrap">
     <table>
       <thead><tr>
@@ -106,6 +149,10 @@
     </div>
   </div>
 <script>
+  // The dashboard is token-gated; carry the token from the address bar into the API call.
+  const TOKEN = new URLSearchParams(location.search).get("t") || "";
+  let LATEST = { records: [], summary: null, chain: null };
+
   function fmtTime(iso) {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? iso : d.toLocaleTimeString();
@@ -119,34 +166,82 @@
       (unit ? `<span class="unit"> ${unit}</span>` : "") +
       `</div><div class="label">${label}</div></div>`;
   }
-  async function load() {
-    let data;
-    try {
-      data = await (await fetch("/api/audit")).json();
-    } catch (e) {
-      return;
-    }
-    const s = data.summary;
-    document.getElementById("stats").innerHTML =
+
+  function renderStats(s) {
+    let cards =
       statCard(s.total, "Tool calls") +
       statCard(s.ok, "Succeeded", "ok") +
       statCard(s.denied, "Blocked", "denied") +
-      statCard(s.errors, "Errored", "err") +
-      statCard(s.total_ms.toFixed(0), "Total time", "", "ms");
-    const rows = data.records.map(r => {
+      statCard(s.errors, "Errored", "err");
+    if (s.flagged) cards += statCard(s.flagged, "Flagged", "flag");
+    if (s.spend) cards += statCard(s.spend.toFixed(4), "Spend", "");
+    cards += statCard(s.total_ms.toFixed(0), "Total time", "", "ms");
+    document.getElementById("stats").innerHTML = cards;
+  }
+
+  function renderChain(chain) {
+    const banner = document.getElementById("banner");
+    if (!chain || chain.ok) { banner.style.display = "none"; return; }
+    banner.style.display = "block";
+    banner.textContent =
+      "This audit log does not verify - " + chain.problem +
+      ". Records after that point cannot be trusted.";
+  }
+
+  function matches(r, needle, outcome, flaggedOnly) {
+    if (outcome && r.outcome !== outcome) return false;
+    if (flaggedOnly && !(r.flags && r.flags.length)) return false;
+    if (!needle) return true;
+    const hay = [r.tool, r.kind, r.error, JSON.stringify(r.arguments || ""),
+                 (r.flags || []).join(" ")].join(" ").toLowerCase();
+    return hay.includes(needle);
+  }
+
+  function renderRows() {
+    const needle = document.getElementById("filter").value.trim().toLowerCase();
+    const outcome = document.getElementById("outcome").value;
+    const flaggedOnly = document.getElementById("onlyFlagged").value;
+    const shown = LATEST.records.filter(r => matches(r, needle, outcome, flaggedOnly));
+
+    document.getElementById("rows").innerHTML = shown.map(r => {
       const args = r.arguments ? JSON.stringify(r.arguments) : "—";
-      const msgLine = (r.outcome !== "ok" && r.error)
+      const msg = (r.outcome !== "ok" && r.error)
         ? `<div class="msg ${esc(r.outcome)} mono">${esc(r.error)}</div>` : "";
+      const flags = (r.flags && r.flags.length)
+        ? `<div class="flags">${r.flags.map(f => `<span class="flag">${esc(f)}</span>`).join("")}</div>`
+        : "";
+      const kind = r.kind && r.kind !== "tool"
+        ? ` <span class="kind">${esc(r.kind)}</span>` : "";
       return `<tr>
         <td class="mono time">${esc(fmtTime(r.timestamp))}</td>
-        <td class="mono tool">${esc(r.tool)}</td>
-        <td><div class="args mono" title="${esc(args)}">${esc(args)}</div>${msgLine}</td>
+        <td class="mono"><span class="tool">${esc(r.tool)}</span>${kind}</td>
+        <td><div class="args mono" title="${esc(args)}">${esc(args)}</div>${msg}${flags}</td>
         <td><span class="badge ${esc(r.outcome)}">${esc(r.outcome)}</span></td>
         <td class="mono">${esc(r.duration_ms)} ms</td>
       </tr>`;
     }).join("");
-    document.getElementById("rows").innerHTML = rows;
-    document.getElementById("empty").style.display = data.records.length ? "none" : "block";
+
+    const total = LATEST.records.length;
+    document.getElementById("count").textContent =
+      shown.length === total ? `${total} shown` : `${shown.length} of ${total} shown`;
+    document.getElementById("empty").style.display = total ? "none" : "block";
+  }
+
+  async function load() {
+    try {
+      const res = await fetch("/api/audit?t=" + encodeURIComponent(TOKEN));
+      if (!res.ok) return;
+      LATEST = await res.json();
+    } catch (e) {
+      return;
+    }
+    renderStats(LATEST.summary);
+    renderChain(LATEST.chain);
+    renderRows();
+  }
+
+  for (const id of ["filter", "outcome", "onlyFlagged"]) {
+    document.getElementById(id).addEventListener("input", renderRows);
   }
   load();
   setInterval(load, 1500);
