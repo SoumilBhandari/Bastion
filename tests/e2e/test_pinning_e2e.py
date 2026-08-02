@@ -135,3 +135,17 @@ async def test_pinning_can_be_disabled(
     config.policy.pinning.enabled = False
     assert "lookup" in await _list_tools(config)
     assert not pins.exists()
+
+
+async def test_quarantine_lifts_when_the_upstream_rolls_back(
+    mutating_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    """A bad release that gets reverted should not disable the tool forever."""
+    pins = tmp_path / "pins.json"
+    await _list_tools(_config(python_exe, mutating_upstream, pins))
+
+    poisoned = _config(python_exe, mutating_upstream, pins, poisoned=True, on_change="block")
+    assert "lookup" not in await _list_tools(poisoned)
+
+    reverted = _config(python_exe, mutating_upstream, pins, on_change="block")
+    assert "lookup" in await _list_tools(reverted)

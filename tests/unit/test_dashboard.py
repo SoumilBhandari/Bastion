@@ -200,3 +200,23 @@ def test_a_rejected_request_leaks_no_records(tmp_path: Path) -> None:
     log.write_text(f"{_record('sensitive_tool')}\n", encoding="utf-8")
     response = _client(log, token=TOKEN).get("/api/audit")
     assert "sensitive_tool" not in response.text
+
+
+def test_a_non_ascii_token_is_refused_rather_than_crashing(tmp_path: Path) -> None:
+    """compare_digest rejects non-ASCII str; that must be a 401, not a 500."""
+    client = _client(tmp_path / "audit.jsonl", token=TOKEN)
+    assert client.get("/api/audit?t=🔑🔑🔑").status_code == 401
+
+
+def test_only_the_most_recent_records_are_returned(tmp_path: Path) -> None:
+    from bastion.dashboard.app import RECENT_LIMIT
+
+    log = tmp_path / "audit.jsonl"
+    log.write_text(
+        "".join(f"{_record(f't{i}')}\n" for i in range(RECENT_LIMIT + 25)), encoding="utf-8"
+    )
+
+    data = _client(log).get("/api/audit").json()
+
+    assert data["summary"]["total"] == RECENT_LIMIT + 25  # counted in full
+    assert len(data["records"]) == RECENT_LIMIT  # but not all returned

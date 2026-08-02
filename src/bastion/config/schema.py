@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from jsonpath_ng import parse as parse_jsonpath
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -117,7 +117,7 @@ class TimeoutConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     default_seconds: float | None = Field(default=120.0, gt=0.0)
-    per_tool: dict[str, float] = Field(default_factory=dict)
+    per_tool: dict[str, Annotated[float, Field(gt=0.0)]] = Field(default_factory=dict)
 
     def for_tool(self, tool: str) -> float | None:
         return self.per_tool.get(tool, self.default_seconds)

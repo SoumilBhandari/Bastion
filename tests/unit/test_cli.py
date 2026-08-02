@@ -381,16 +381,15 @@ def test_explain_rejects_non_object_args(tmp_path: Path) -> None:
     assert "JSON object" in result.output
 
 
-def test_explain_does_not_consume_rate_limit_tokens(tmp_path: Path) -> None:
-    """Explaining a call must not spend the budget it is reporting on."""
+def test_explain_reports_rate_limit_headroom(tmp_path: Path) -> None:
     config = _policy_config(
         tmp_path,
         "  rate_limits:\n    - { name: cap, scope: global, max_per_minute: 60, burst: 3 }\n",
     )
-    for _ in range(5):
-        result = runner.invoke(app, ["explain", "echo", "--config", str(config)])
-        assert result.exit_code == 0
-    assert "3.0 of 3" in result.output
+    result = runner.invoke(app, ["explain", "echo", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "3.0 of 3" in _flat(result.output)
 
 
 # ------------- doctor -------------

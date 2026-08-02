@@ -236,3 +236,56 @@ def test_engine_permission_deny_takes_precedence_over_guard() -> None:
     decision = engine.check("blocked", {"y": "anything"})
     assert not decision.allowed
     assert "default" in decision.reason
+
+
+# ------------- explain is read-only -------------
+
+
+def test_explain_does_not_consume_rate_limit_tokens() -> None:
+    """Explaining a call must not spend the budget it is reporting on.
+
+    Driven against one engine on purpose: each CLI invocation builds a fresh
+    engine, so consumption could never show up across separate `bastion explain`
+    runs however many were made.
+    """
+    policy = PolicyConfig.model_validate(
+        {"rate_limits": [{"name": "cap", "scope": "global", "max_per_minute": 60, "burst": 3}]}
+    )
+    engine = PolicyEngine(policy)
+
+    for _ in range(10):
+        engine.explain("echo")
+
+    assert engine.check("echo").allowed
+    headroom = engine.explain("echo").steps[2].detail
+    assert headroom.startswith("3.0 of 3")
+
+
+def test_explain_does_not_advance_budgets() -> None:
+    policy = PolicyConfig.model_validate(
+        {
+            "budgets": [{"name": "cap", "scope": "global", "per": "hour", "max_calls": 2}],
+            "budget_checkpoint": None,
+        }
+    )
+    engine = PolicyEngine(policy)
+
+    for _ in range(10):
+        engine.explain("echo")
+
+    assert engine.check("echo").allowed
+    assert "0/2 calls" in engine.explain("echo").steps[-1].detail
+
+
+def test_check_does_not_consume_either() -> None:
+    policy = PolicyConfig.model_validate(
+        {"rate_limits": [{"name": "cap", "scope": "global", "max_per_minute": 60, "burst": 2}]}
+    )
+    engine = PolicyEngine(policy)
+
+    for _ in range(5):
+        assert engine.check("echo").allowed  # peek only
+
+    engine.reserve("echo")
+    engine.reserve("echo")
+    assert not engine.check("echo").allowed  # now the bucket really is empty

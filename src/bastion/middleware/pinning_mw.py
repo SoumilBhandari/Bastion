@@ -50,13 +50,16 @@ class PinningMiddleware(Middleware):
         tools = await call_next(context)
         report = self._checker.check([ToolFingerprint.of(tool.to_mcp_tool()) for tool in tools])
 
+        # Rebuilt from this listing rather than accumulated. An upstream that
+        # ships a bad release and rolls it back an hour later should become
+        # usable again; a quarantine that only ever grew left the tool
+        # unreachable for the life of the process, with `bastion pin --approve`
+        # unable to help because the running gateway never re-read the pins.
+        drifted = {drift.name for drift in report.drifted}
         for drift in report.drifted:
-            self._quarantined.add(drift.name)
-            self._note(
-                name=drift.name,
-                message=drift.summary(),
-                blocked=self._block,
-            )
+            if drift.name not in self._quarantined:
+                self._note(name=drift.name, message=drift.summary(), blocked=self._block)
+        self._quarantined = drifted
 
         if not self._block or not self._quarantined:
             return tools

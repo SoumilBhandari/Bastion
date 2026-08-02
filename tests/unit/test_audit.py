@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from bastion.audit import AuditRecord, AuditWriter, rotated_paths
 
 
@@ -57,11 +59,29 @@ def test_audit_writer_flushes_each_record_immediately(tmp_path: Path) -> None:
     assert len(log.read_text(encoding="utf-8").splitlines()) == 1
 
 
-def test_audit_writer_fsyncs_when_asked(tmp_path: Path) -> None:
-    log = tmp_path / "audit.jsonl"
-    with AuditWriter(log, fsync=True) as writer:
+def test_audit_writer_fsyncs_when_asked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asserting the line was written proves nothing; fsync must actually be called."""
+    synced: list[int] = []
+    monkeypatch.setattr("bastion.audit.writer.os.fsync", synced.append)
+
+    with AuditWriter(tmp_path / "audit.jsonl", fsync=True) as writer:
         writer.write(AuditRecord(tool="a"))
-    assert len(log.read_text(encoding="utf-8").splitlines()) == 1
+        writer.write(AuditRecord(tool="b"))
+
+    assert len(synced) == 2
+
+
+def test_audit_writer_does_not_fsync_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A disk round trip per call is opt-in."""
+    synced: list[int] = []
+    monkeypatch.setattr("bastion.audit.writer.os.fsync", synced.append)
+
+    with AuditWriter(tmp_path / "audit.jsonl") as writer:
+        writer.write(AuditRecord(tool="a"))
+
+    assert synced == []
 
 
 def test_audit_writer_rotates_past_the_size_limit(tmp_path: Path) -> None:

@@ -71,7 +71,7 @@ class AuditWriter:
         handle = self._open()
         handle.write(line)
         handle.flush()
-        if False:
+        if self._fsync:
             os.fsync(handle.fileno())
 
         # Advance the chain only once the record is actually written: a write

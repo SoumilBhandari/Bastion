@@ -132,9 +132,18 @@ class PinStore:
         }
 
     def replace_all(self, fingerprints: list[ToolFingerprint]) -> None:
+        """Re-pin exactly these definitions, dropping any others.
+
+        Keeps each tool's ``first_seen``: re-approving a changed description is
+        not the same as meeting the tool for the first time, and losing that
+        date would erase the only record of how long it has been trusted.
+        """
+        previous = self._pins
         self._pins = {}
         for fingerprint in fingerprints:
             self.add(fingerprint)
+            if earlier := previous.get(fingerprint.name, {}).get("first_seen"):
+                self._pins[fingerprint.name]["first_seen"] = earlier
 
     def save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

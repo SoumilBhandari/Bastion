@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 _OUTCOME_STYLES = {
@@ -19,12 +20,24 @@ _OUTCOME_STYLES = {
 
 def style_outcome(outcome: str) -> str:
     """Return a rich-formatted version of an audit outcome string."""
-    return _OUTCOME_STYLES.get(outcome, outcome)
+    return _OUTCOME_STYLES.get(outcome, escape(outcome))
 
 
 def shorten_timestamp(ts: str) -> str:
     """Trim an ISO 8601 timestamp to ``HH:MM:SS``."""
     return ts[11:19] if len(ts) >= 19 else ts
+
+
+def _safe(value: Any) -> str:
+    """Render an audit field as literal text, never as Rich markup.
+
+    Tool names, error messages and flags come from upstream servers, so they are
+    attacker-influenced. Passed through unescaped, a message containing an
+    unmatched tag such as ``[/nonexistent]`` raises MarkupError and takes down
+    `bastion logs` and `bastion tail` entirely — and a well-formed tag would let
+    an upstream paint convincing coloured text into the operator's terminal.
+    """
+    return escape(str(value))
 
 
 def render_records_table(
@@ -44,8 +57,8 @@ def render_records_table(
     table.add_column("Detail", overflow="fold")
     for record in records:
         table.add_row(
-            shorten_timestamp(str(record.get("timestamp", ""))),
-            str(record.get("tool", "")),
+            _safe(shorten_timestamp(str(record.get("timestamp", "")))),
+            _safe(record.get("tool", "")),
             style_outcome(str(record.get("outcome", ""))),
             f"{float(record.get('duration_ms', 0)):.1f}ms",
             _detail(record),
@@ -62,14 +75,14 @@ def format_flags(record: dict[str, Any]) -> str:
     flags = record.get("flags")
     if not isinstance(flags, list) or not flags:
         return ""
-    return " ".join(f"[magenta]{flag}[/magenta]" for flag in flags)
+    return " ".join(f"[magenta]{_safe(flag)}[/magenta]" for flag in flags)
 
 
 def _detail(record: dict[str, Any]) -> str:
     """The error, the flags, or both — whatever the record has to say."""
     parts = []
     if error := record.get("error"):
-        parts.append(str(error))
+        parts.append(_safe(error))
     if flags := format_flags(record):
         parts.append(flags)
     return "\n".join(parts)
@@ -77,12 +90,12 @@ def _detail(record: dict[str, Any]) -> str:
 
 def format_record_line(record: dict[str, Any]) -> str:
     """Format one audit record as a single rich-styled line for streaming output."""
-    ts = shorten_timestamp(str(record.get("timestamp", "")))
-    tool = str(record.get("tool", ""))
+    ts = _safe(shorten_timestamp(str(record.get("timestamp", ""))))
+    tool = _safe(record.get("tool", ""))
     outcome = style_outcome(str(record.get("outcome", "")))
     duration = f"{float(record.get('duration_ms', 0)):.1f}ms"
     err = record.get("error")
-    err_part = f" [red]{err}[/red]" if err else ""
+    err_part = f" [red]{_safe(err)}[/red]" if err else ""
     flag_part = f" {flags}" if (flags := format_flags(record)) else ""
     return f"[dim]{ts}[/dim] {outcome} {tool} {duration}{err_part}{flag_part}"
 
@@ -120,5 +133,5 @@ def render_stats(
     tool_table.add_column("Tool")
     tool_table.add_column("Calls", justify="right")
     for tool, count in tools.most_common(top):
-        tool_table.add_row(tool, str(count))
+        tool_table.add_row(_safe(tool), str(count))
     console.print(tool_table)

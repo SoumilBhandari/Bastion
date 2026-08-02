@@ -164,3 +164,65 @@ def test_the_table_shows_flags_for_a_successful_call(capsys: pytest.CaptureFixtu
         console=Console(width=200),
     )
     assert "secret:github-token" in capsys.readouterr().out
+
+
+# ------------- upstream text is data, not markup -------------
+
+HOSTILE = "boom: [bold red]FAKE NOTICE[/] and [/nonexistent] tag"
+
+
+def test_a_hostile_error_message_does_not_crash_the_table() -> None:
+    """An upstream must not be able to take down `bastion logs` with a stray tag."""
+    render_records_table(
+        [
+            {
+                "timestamp": "2026-05-25T10:00:00Z",
+                "tool": "t",
+                "outcome": "error",
+                "duration_ms": 1.0,
+                "error": HOSTILE,
+            }
+        ],
+        console=Console(width=200),
+    )
+
+
+def test_a_hostile_error_message_does_not_crash_the_stream() -> None:
+    Console(width=200).print(
+        format_record_line(
+            {
+                "timestamp": "2026-05-25T10:00:00Z",
+                "tool": "t",
+                "outcome": "error",
+                "duration_ms": 1.0,
+                "error": HOSTILE,
+            }
+        )
+    )
+
+
+def test_a_hostile_tool_name_does_not_crash_stats() -> None:
+    render_stats(
+        [{"tool": "[/oops]", "outcome": "ok", "duration_ms": 1.0}], console=Console(width=200)
+    )
+
+
+def test_markup_in_an_error_is_shown_literally(capsys: pytest.CaptureFixture[str]) -> None:
+    """An upstream must not be able to paint styled text into the operator's terminal."""
+    render_records_table(
+        [
+            {
+                "timestamp": "2026-05-25T10:00:00Z",
+                "tool": "t",
+                "outcome": "error",
+                "duration_ms": 1.0,
+                "error": "[bold red]FAKE ADMIN NOTICE[/bold red]",
+            }
+        ],
+        console=Console(width=200),
+    )
+    assert "[bold red]FAKE ADMIN NOTICE[/bold red]" in capsys.readouterr().out
+
+
+def test_hostile_flags_are_shown_literally() -> None:
+    assert "[/x]" in format_flags({"flags": ["injection:[/x]"]})

@@ -68,7 +68,9 @@ def build_dashboard_app(config: BastionConfig, *, token: str | None = None) -> S
         if token is None:
             return True
         supplied = request.query_params.get("t") or request.headers.get("x-bastion-token", "")
-        return secrets.compare_digest(supplied, token)
+        # compare_digest rejects non-ASCII str outright; compare bytes so a
+        # token full of emoji is refused as wrong rather than raising a 500.
+        return secrets.compare_digest(supplied.encode("utf-8"), token.encode("utf-8"))
 
     async def index(request: Request) -> Response:
         if not authorized(request):

@@ -160,3 +160,18 @@ def test_malformed_entries_are_skipped(tmp_path: Path) -> None:
     store = PinStore(pins)
     assert store.names() == ["good"]
     assert store.digest_of("bad") is None
+
+
+def test_re_pinning_keeps_the_original_first_seen(tmp_path: Path) -> None:
+    """Re-approving a changed description is not meeting the tool for the first time."""
+    pins = tmp_path / "pins.json"
+    store = PinStore(pins)
+    store.replace_all([_fingerprint()])
+    store.save()
+    original = json.loads(pins.read_text(encoding="utf-8"))["tools"]["lookup"]["first_seen"]
+
+    reloaded = PinStore(pins)
+    reloaded.replace_all([_fingerprint(description="changed, then approved")])
+    reloaded.save()
+
+    assert json.loads(pins.read_text(encoding="utf-8"))["tools"]["lookup"]["first_seen"] == original

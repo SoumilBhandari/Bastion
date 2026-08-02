@@ -172,7 +172,7 @@ value-shaped pattern would: a short passphrase, a numeric PIN.
 Detection is anchored on real issuer formats rather than guessing at entropy,
 because a false positive silently destroys evidence in an audit log. If a tool's
 whole job is returning credentials — a vault, a password manager — list it in
-`responses.allow_secrets_from`.
+`policy.responses.allow_secrets_from`.
 
 ### Prompt injection is flagged, not silently swallowed
 

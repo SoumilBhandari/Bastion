@@ -394,3 +394,29 @@ def test_guard_rejects_invalid_action() -> None:
                 },
             }
         )
+
+
+def test_a_zero_per_tool_timeout_is_rejected() -> None:
+    """A 0 would fail every call to that tool instantly."""
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {"upstreams": {"a": {"command": "x"}}, "timeouts": {"per_tool": {"slow": 0}}}
+        )
+
+
+def test_a_negative_per_tool_timeout_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        BastionConfig.model_validate(
+            {"upstreams": {"a": {"command": "x"}}, "timeouts": {"per_tool": {"slow": -5}}}
+        )
+
+
+def test_load_config_anchors_the_pinning_path(tmp_path: Path) -> None:
+    nested = tmp_path / "conf"
+    nested.mkdir()
+    config_file = nested / "bastion.yaml"
+    config_file.write_text(
+        "upstreams:\n  a:\n    command: x\npolicy:\n  pinning:\n    path: ./pins.json\n",
+        encoding="utf-8",
+    )
+    assert load_config(config_file).policy.pinning.path == nested.resolve() / "pins.json"
