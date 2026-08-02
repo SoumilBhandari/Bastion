@@ -205,6 +205,57 @@ class GuardRule(BaseModel):
         return self
 
 
+class ResponseGuardRule(BaseModel):
+    """A guard rule applied to an upstream's result text.
+
+    ``match`` is a glob over tool names, ``pattern`` a regex tested against the
+    result. ``block`` refuses the result outright; ``redact`` masks the matched
+    span before the agent sees it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    match: str = "*"
+    pattern: str = Field(min_length=1)
+    action: Literal["block", "redact"] = "redact"
+
+    @model_validator(mode="after")
+    def _validate_pattern(self) -> ResponseGuardRule:
+        try:
+            re.compile(self.pattern)
+        except re.error as exc:
+            raise ValueError(f"invalid 'pattern' regex: {exc}") from exc
+        return self
+
+
+class ResponseConfig(BaseModel):
+    """What the gateway does with results on the way back to the agent.
+
+    Argument guards protect the world from the agent; these protect the agent
+    from the world. ``redact_secrets`` masks credentials a tool returned, so a
+    leaked key never reaches the model's context at all. Some tools return
+    credentials because that is their whole job — a vault or password-manager
+    server — so list those in ``allow_secrets_from`` (globs over tool names) to
+    let their results through intact.
+
+    ``detect_injection`` looks for text engineered to steer the agent — the
+    payload usually arriving not from the MCP server but from whatever it
+    fetched: a web page, an issue comment, a filename. ``warn`` (the default)
+    flags it in the audit log and prefixes the result with a caution telling
+    the model to treat it as data; ``block`` refuses the result; ``off``
+    disables the check. The default is deliberately not ``block``: these are
+    heuristics, and a document *about* prompt injection will trip them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    redact_secrets: bool = True
+    allow_secrets_from: list[str] = Field(default_factory=list)
+    detect_injection: Literal["off", "warn", "block"] = "warn"
+    guards: list[ResponseGuardRule] = Field(default_factory=list)
+
+
 class PolicyConfig(BaseModel):
     """Policy enforced on every tool call.
 
@@ -226,6 +277,7 @@ class PolicyConfig(BaseModel):
     budgets: list[BudgetRule] = Field(default_factory=list)
     budget_checkpoint: Path | None = Path("bastion-budgets.json")
     guards: list[GuardRule] = Field(default_factory=list)
+    responses: ResponseConfig = Field(default_factory=ResponseConfig)
 
 
 class BastionConfig(BaseModel):

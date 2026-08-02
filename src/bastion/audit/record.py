@@ -34,6 +34,7 @@ class AuditRecord:
     duration_ms: float = 0.0
     error: str | None = None
     cost: float | None = None
+    flags: list[str] | None = None
 
     def payload(self) -> dict[str, Any]:
         """The record's own fields, without any hash-chain metadata."""
@@ -47,6 +48,7 @@ class AuditRecord:
             "duration_ms": self.duration_ms,
             "error": self.error,
             "cost": self.cost,
+            "flags": self.flags,
         }
 
     def to_json_line(self) -> str:

@@ -17,9 +17,11 @@ from bastion.middleware import (
     AuditMiddleware,
     ErrorBoundary,
     PolicyMiddleware,
+    ResponseGuardMiddleware,
     TimeoutMiddleware,
 )
 from bastion.policy import PolicyEngine
+from bastion.policy.responses import ResponseInspector
 
 GATEWAY_NAME = "bastion"
 
@@ -55,7 +57,7 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
 
     The chain runs outermost-first::
 
-        ErrorBoundary → Audit → Policy → Timeout → upstream
+        ErrorBoundary → Audit → Policy → ResponseGuard → Timeout → upstream
 
     Audit sits outside Policy so denials are recorded, and Timeout sits inside
     Policy so the clock covers only the upstream call — a request that waits on
@@ -84,5 +86,6 @@ def build_gateway(config: BastionConfig) -> FastMCP[Any]:
             )
         )
     gateway.add_middleware(PolicyMiddleware(engine, hide_denied=config.policy.hide_denied))
+    gateway.add_middleware(ResponseGuardMiddleware(ResponseInspector(config.policy.responses)))
     gateway.add_middleware(TimeoutMiddleware(config.timeouts))
     return gateway

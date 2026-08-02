@@ -543,7 +543,14 @@ async def test_secrets_are_redacted_from_the_audit_log(
     sample_upstream: Path, python_exe: str, tmp_path: Path
 ) -> None:
     audit_log = tmp_path / "audit.jsonl"
-    gateway = build_gateway(_config(_stdio(python_exe, sample_upstream), audit_path=audit_log))
+    # Response redaction off, so this isolates what reaches the log.
+    gateway = build_gateway(
+        _config(
+            _stdio(python_exe, sample_upstream),
+            audit_path=audit_log,
+            policy=_responses(redact_secrets=False, detect_injection="off"),
+        )
+    )
     token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
 
     async with Client(gateway) as client:
@@ -571,3 +578,121 @@ async def test_secret_redaction_can_be_disabled(
         await client.call_tool("echo", {"text": token})
 
     assert token in audit_log.read_text(encoding="utf-8")
+
+
+# ------------- response guards -------------
+
+
+def _responses(**settings: Any) -> dict[str, Any]:
+    return {"default": "allow", "responses": settings}
+
+
+async def test_a_credential_in_the_result_is_redacted_before_the_agent_sees_it(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    gateway = build_gateway(
+        _config(_stdio(python_exe, sample_upstream), policy=_responses(redact_secrets=True))
+    )
+    async with Client(gateway) as client:
+        result = await client.call_tool("leak_credential", {})
+    assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" not in str(result.content)
+    assert "***" in str(result.content)
+
+
+async def test_response_redaction_can_be_disabled(sample_upstream: Path, python_exe: str) -> None:
+    gateway = build_gateway(
+        _config(
+            _stdio(python_exe, sample_upstream),
+            policy=_responses(redact_secrets=False, detect_injection="off"),
+        )
+    )
+    async with Client(gateway) as client:
+        result = await client.call_tool("leak_credential", {})
+    assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" in str(result.content)
+
+
+async def test_prompt_injection_is_flagged_and_cautioned_by_default(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    gateway = build_gateway(_config(_stdio(python_exe, sample_upstream)))
+    async with Client(gateway) as client:
+        result = await client.call_tool("poisoned_page", {})
+    text = str(result.content)
+    assert "untrusted data" in text
+    # The original text is still delivered — the agent is warned, not blinded.
+    assert "Ignore all previous instructions" in text
+
+
+async def test_prompt_injection_can_be_blocked(sample_upstream: Path, python_exe: str) -> None:
+    gateway = build_gateway(
+        _config(_stdio(python_exe, sample_upstream), policy=_responses(detect_injection="block"))
+    )
+    async with Client(gateway) as client:
+        with pytest.raises(ToolError, match="withheld"):
+            await client.call_tool("poisoned_page", {})
+
+
+async def test_injection_detection_can_be_turned_off(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    gateway = build_gateway(
+        _config(_stdio(python_exe, sample_upstream), policy=_responses(detect_injection="off"))
+    )
+    async with Client(gateway) as client:
+        result = await client.call_tool("poisoned_page", {})
+    assert "untrusted data" not in str(result.content)
+
+
+async def test_response_findings_reach_the_audit_log(
+    sample_upstream: Path, python_exe: str, tmp_path: Path
+) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    gateway = build_gateway(_config(_stdio(python_exe, sample_upstream), audit_path=audit_log))
+    async with Client(gateway) as client:
+        await client.call_tool("poisoned_page", {})
+
+    records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+    assert any("injection:instruction-override" in (r.get("flags") or []) for r in records)
+
+
+async def test_a_clean_result_is_returned_untouched(sample_upstream: Path, python_exe: str) -> None:
+    gateway = build_gateway(_config(_stdio(python_exe, sample_upstream)))
+    async with Client(gateway) as client:
+        result = await client.call_tool("echo", {"text": "an entirely ordinary answer"})
+    assert result.data == "an entirely ordinary answer"
+
+
+async def test_an_operator_response_guard_can_block_a_result(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    gateway = build_gateway(
+        _config(
+            _stdio(python_exe, sample_upstream),
+            policy=_responses(
+                guards=[
+                    {"name": "no-secrets-word", "pattern": "here is the key", "action": "block"}
+                ]
+            ),
+        )
+    )
+    async with Client(gateway) as client:
+        with pytest.raises(ToolError, match="no-secrets-word"):
+            await client.call_tool("leak_credential", {})
+
+
+async def test_a_vault_style_tool_can_be_exempted_from_response_redaction(
+    sample_upstream: Path, python_exe: str
+) -> None:
+    """A tool whose whole job is returning credentials must still be able to."""
+    gateway = build_gateway(
+        _config(
+            _stdio(python_exe, sample_upstream),
+            policy=_responses(redact_secrets=True, allow_secrets_from=["leak_*"]),
+        )
+    )
+    async with Client(gateway) as client:
+        exempt = await client.call_tool("leak_credential", {})
+        governed = await client.call_tool("echo", {"text": "key ghp_abcdefghijklmnopqrstuvwxyz01"})
+
+    assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" in str(exempt.content)
+    assert "ghp_abcdefghijklmnopqrstuvwxyz01" not in str(governed.content)
