@@ -57,6 +57,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+The following were found by an adversarial review of this branch, and are worth
+listing individually because each one made a documented guarantee weaker than it
+read.
+
+- **The hash chain could be laundered.** Stripping `hash` and `prev` from the
+  leading records let an attacker rewrite any prefix of the log: the rest still
+  chained to each other, `verify` reported OK, and the head hash was unchanged,
+  so even anchoring the head off-box did not catch it. Unchained records
+  followed by a chain that does not open at genesis are now a break.
+- **Deleting records from the front of the log verified clean.** Rotation is the
+  only legitimate reason a chain starts mid-stream; `verify` and `doctor` now
+  fail when it does and nothing was rotated.
+- **A record larger than 256 KiB restarted the chain at genesis.** Arguments are
+  logged by default and unbounded, so one call carrying a large document made
+  every later verification report tampering that never happened. Restarting in
+  the gap between a rotation and the next write did the same.
+- **Cancelled calls were recorded as successes.** `asyncio.CancelledError`
+  derives from `BaseException` and slipped past the audit middleware, so every
+  in-flight call at client disconnect was hash-chained into the log as `ok`.
+- **Response scanning skipped embedded resources** — the ordinary way MCP
+  servers return file contents and fetched pages — so credentials and injection
+  payloads in them reached the agent unredacted and unlogged. The injection
+  caution also never reached `structured_content`, which is what `result.data`
+  returns, and operator `redact` guards never applied there either.
+- **`^system:` only matched at the very start of a result**, because the pattern
+  is line-anchored but was compiled without `MULTILINE`.
+- **The hidden-comment check amplified CPU ~64×** on attacker-chosen output: 100
+  KB of bare `<!--` cost 529 ms against 8 ms for prose.
+- **Upstream text reached Rich unescaped**, so a tool error containing an
+  unmatched tag crashed `bastion logs` and `bastion tail`, and a well-formed one
+  could paint styled text into the operator's terminal.
+- **Three examples and `bastion init` shipped rules that could never match**,
+  using the `<upstream>_<tool>` form against a single upstream, where names pass
+  through unprefixed. `examples/hardened/` allowlisted nothing and left the agent
+  with no tools; `examples/permissions/` allowed the writes its own comment said
+  it blocked. `bastion doctor` now fails on any rule matching no advertised tool.
+- **A pin quarantine was never released**, so an upstream that shipped a bad tool
+  description and reverted it left that tool unreachable until restart.
+- **`audit.fsync` was inert**, and the test covering it asserted only that a line
+  had been written — equally true without fsync. Several other tests could not
+  fail either; they now can.
+- A non-ASCII dashboard token returned 500 instead of 401; a zero or negative
+  per-tool timeout was accepted; re-pinning reset a tool's `first_seen`.
+
 - **Failed tool calls were audited as successful.** An upstream tool that raises
   does not propagate an exception through the proxy; FastMCP marshals the
   failure into a result with `is_error=True`. The audit middleware only
