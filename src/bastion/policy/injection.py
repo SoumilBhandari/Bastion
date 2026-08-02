@@ -54,7 +54,11 @@ class InjectionPattern:
 
 
 def _compile(name: str, expression: str) -> InjectionPattern:
-    return InjectionPattern(name, re.compile(expression, re.IGNORECASE))
+    # MULTILINE so that a line-anchored alternative such as "^system:" matches
+    # anywhere in a multi-line result, not only at its very first character.
+    # Results are joined from every content block before scanning, so without
+    # it a spoofed role line was only ever caught at offset zero.
+    return InjectionPattern(name, re.compile(expression, re.IGNORECASE | re.MULTILINE))
 
 
 # All linear-time: this scans attacker-controlled text, so a pattern that could
@@ -104,11 +108,41 @@ INJECTION_PATTERNS: tuple[InjectionPattern, ...] = (
 _HIDDEN_CHARACTERS = re.compile(r"[​-‏⁠-⁤﻿]{3,}")
 """A run of zero-width characters — text placed where a human reviewer cannot see it."""
 
-_HTML_COMMENT_INSTRUCTION = re.compile(
-    r"<!--(?:(?!-->).){0,2000}?\b(?:ignore|instruction|you\s+must|system\s+prompt)\b",
-    re.IGNORECASE | re.DOTALL,
+_COMMENT_INSTRUCTION = re.compile(
+    r"\b(?:ignore|instruction|you\s+must|system\s+prompt)\b", re.IGNORECASE
 )
-"""An HTML comment carrying imperative language — invisible in a rendered page."""
+"""Imperative language inside an HTML comment — invisible in a rendered page."""
+
+_COMMENT_WINDOW = 2000
+"""How far into one comment to look for that language."""
+
+_COMMENT_BUDGET = 128_000
+"""Total characters of comment to examine before giving up.
+
+The obvious way to write this check is one regex with a lazy, negated inner
+match. That regex restarts a bounded scan at every ``<!--`` in the text, so a
+result that is nothing but comment openers costs far more than its length: 100 KB
+of ``"<!-- "`` took 529 ms against 8 ms for the same size of prose, which is half
+a second of stalled event loop that an attacker-controlled page could buy per
+call. Scanning explicitly with a budget makes the cost proportional to the input.
+
+The budget is a real limit: a payload hidden past it is not found.
+"""
+
+
+def _has_hidden_comment(text: str) -> bool:
+    """Whether any HTML comment carries instruction-like language."""
+    budget = _COMMENT_BUDGET
+    start = text.find("<!--")
+    while start != -1 and budget > 0:
+        opening = start + 4
+        closing = text.find("-->", opening)
+        stop = min(opening + _COMMENT_WINDOW, len(text) if closing == -1 else closing)
+        if stop > opening and _COMMENT_INSTRUCTION.search(text, opening, stop):
+            return True
+        budget -= stop - opening
+        start = text.find("<!--", opening)
+    return False
 
 
 def find_injection(text: str) -> list[str]:
@@ -129,7 +163,7 @@ def _scan(text: str) -> Iterator[str]:
             yield signature.name
     if _HIDDEN_CHARACTERS.search(window) is not None:
         yield "hidden-characters"
-    if _HTML_COMMENT_INSTRUCTION.search(window) is not None:
+    if _has_hidden_comment(window):
         yield "hidden-html-comment"
 
 

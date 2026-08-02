@@ -36,7 +36,7 @@ def end(token: Token[RequestNotes | None]) -> RequestNotes:
     return collected
 
 
-def add_flags(flags: list[str]) -> None:
+def record_flags(flags: list[str]) -> None:
     """Add findings to the request in progress; a no-op outside one."""
     if (current := _NOTES.get()) is not None:
         current.flags.extend(flags)

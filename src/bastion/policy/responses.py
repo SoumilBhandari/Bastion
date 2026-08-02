@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from bastion.config.schema import ResponseConfig, ResponseGuardRule
 from bastion.policy.injection import find_injection
-from bastion.policy.secrets import find_secrets, redact_structure, redact_text
+from bastion.policy.secrets import find_secrets, redact_text
 
 
 @dataclass
@@ -115,16 +115,36 @@ class ResponseInspector:
         return text
 
     def apply_structured(self, tool: str, value: Any, verdict: ResponseVerdict) -> Any:
-        """Rewrite a structured result according to ``verdict``."""
-        if verdict.redact and self._redacts_secrets_for(tool):
-            return redact_structure(value)
-        return value
+        """Rewrite a structured result according to ``verdict``.
+
+        Runs the same transform as :meth:`apply` over every string in the
+        structure, so an operator's ``redact`` guard covers structured output
+        too — previously only built-in secret detection reached it, and a rule
+        written to mask something in a tool's text left it exposed in the copy
+        that ``result.data`` returns.
+        """
+        if not verdict.redact:
+            return value
+        return _map_strings(value, lambda text: self.apply(tool, text, verdict))
 
     def text_of(self, structured: Mapping[str, Any] | None) -> str:
         """Flatten a structured result to text so the same rules can scan it."""
         if not structured:
             return ""
         return " ".join(_leaf_strings(structured))
+
+
+def _map_strings(value: Any, transform: Callable[[str], str]) -> Any:
+    """Apply ``transform`` to every string in a nested structure."""
+    if isinstance(value, str):
+        return transform(value)
+    if isinstance(value, dict):
+        return {key: _map_strings(item, transform) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_map_strings(item, transform) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_map_strings(item, transform) for item in value)
+    return value
 
 
 def _leaf_strings(value: Any) -> list[str]:
