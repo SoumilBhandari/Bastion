@@ -23,6 +23,27 @@ from bastion.policy.models import PolicyDenied
 RedactFn = Callable[[str, dict[str, Any]], dict[str, Any]]
 _R = TypeVar("_R")
 
+_MAX_ERROR_CHARS = 2000
+
+
+def _result_error(result: Any) -> str | None:
+    """Extract the error message from a failed result, or ``None`` if it succeeded.
+
+    An upstream tool that raises does not propagate an exception through the
+    proxy: FastMCP marshals the failure into a ``ToolResult`` with
+    ``is_error=True`` and the message in its content. Without this check a
+    failed call would be audited as ``ok``.
+    """
+    if not getattr(result, "is_error", False):
+        return None
+    texts = [
+        text
+        for block in getattr(result, "content", None) or []
+        if isinstance(text := getattr(block, "text", None), str)
+    ]
+    message = "\n".join(texts).strip()
+    return message[:_MAX_ERROR_CHARS] if message else "upstream reported an error"
+
 
 class AuditMiddleware(Middleware):
     """Writes one audit record for every tool call, resource read, and prompt fetch.
@@ -68,7 +89,7 @@ class AuditMiddleware(Middleware):
         )
         start = time.monotonic()
         try:
-            return await call_next(context)
+            result = await call_next(context)
         except PolicyDenied as exc:
             record.outcome = "denied"
             record.error = str(exc)
@@ -77,6 +98,11 @@ class AuditMiddleware(Middleware):
             record.outcome = "error"
             record.error = str(exc)
             raise
+        else:
+            if (message := _result_error(result)) is not None:
+                record.outcome = "error"
+                record.error = message
+            return result
         finally:
             record.duration_ms = round((time.monotonic() - start) * 1000, 3)
             self._writer.write(record)
