@@ -15,6 +15,38 @@ class PolicyDecision:
     reason: str
 
 
+@dataclass(frozen=True)
+class ExplanationStep:
+    """One policy layer's verdict on a call, with the reasoning behind it."""
+
+    layer: str
+    allowed: bool
+    detail: str
+    skipped: bool = False
+
+
+@dataclass(frozen=True)
+class Explanation:
+    """Every layer's verdict on one call — the answer to "why was this denied?".
+
+    Unlike a :class:`PolicyDecision`, which stops at the first denial, this
+    keeps going, so a call blocked by several layers at once shows all of them
+    rather than only the first.
+    """
+
+    tool: str
+    steps: list[ExplanationStep]
+    cost: float
+
+    @property
+    def allowed(self) -> bool:
+        return all(step.allowed for step in self.steps)
+
+    @property
+    def blockers(self) -> list[ExplanationStep]:
+        return [step for step in self.steps if not step.allowed]
+
+
 class PolicyDenied(ToolError):
     """Raised when a tool call is blocked by policy.
 

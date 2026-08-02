@@ -113,3 +113,15 @@ class RateLimiter:
         """
         for index, rule in enumerate(self._rules):
             self._bucket(index, rule, tool).consume()
+
+    def describe(self, tool: str) -> list[tuple[str, str, bool]]:
+        """Per-rule ``(name, headroom, allowed)`` for this tool, for explanations."""
+        described = []
+        for index, rule in enumerate(self._rules):
+            bucket = self._bucket(index, rule, tool)
+            headroom = (
+                f"{bucket.tokens:.1f} of {rule.burst or rule.max_per_minute} "
+                f"tokens ({rule.max_per_minute}/min, {rule.scope})"
+            )
+            described.append((rule.name, headroom, bucket.peek()))
+        return described

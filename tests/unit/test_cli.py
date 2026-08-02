@@ -284,3 +284,170 @@ def test_verify_can_span_rotated_generations(tmp_path: Path) -> None:
     spanning = runner.invoke(app, ["verify", "--config", str(config), "--include-rotated"])
     assert spanning.exit_code == 0
     assert "OK" in spanning.output
+
+
+# ------------- explain -------------
+
+
+def _policy_config(tmp_path: Path, policy: str) -> Path:
+    config = tmp_path / "bastion.yaml"
+    config.write_text(
+        f"upstreams:\n  a:\n    command: x\naudit:\n  enabled: false\npolicy:\n{policy}",
+        encoding="utf-8",
+    )
+    return config
+
+
+def test_explain_reports_an_allowed_tool(tmp_path: Path) -> None:
+    config = _policy_config(tmp_path, "  default: allow\n")
+    result = runner.invoke(app, ["explain", "echo", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "ALLOWED" in result.output
+    assert "permissions" in result.output
+
+
+def test_explain_reports_a_denied_tool_and_exits_nonzero(tmp_path: Path) -> None:
+    config = _policy_config(
+        tmp_path, '  default: allow\n  permissions:\n    - { tool: "drop_*", action: deny }\n'
+    )
+    result = runner.invoke(app, ["explain", "drop_table", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert "DENIED" in result.output
+    assert "drop_*" in result.output
+
+
+def test_explain_shows_every_layer_not_just_the_first_denial(tmp_path: Path) -> None:
+    config = _policy_config(
+        tmp_path,
+        "  default: deny\n"
+        "  rate_limits:\n    - { name: cap, scope: global, max_per_minute: 5 }\n"
+        "  budgets:\n    - { name: daily, scope: global, per: day, max_calls: 10 }\n",
+    )
+    result = runner.invoke(app, ["explain", "anything", "--config", str(config)])
+
+    assert "permissions" in result.output
+    assert "cap" in result.output
+    assert "daily" in result.output
+
+
+def test_explain_evaluates_argument_guards(tmp_path: Path) -> None:
+    config = _policy_config(
+        tmp_path,
+        '  guards:\n    - { name: no-etc, arg: "$.path", pattern: "^/etc/", action: block }\n',
+    )
+    blocked = runner.invoke(
+        app, ["explain", "write", "--config", str(config), "--args", '{"path": "/etc/passwd"}']
+    )
+    allowed = runner.invoke(
+        app, ["explain", "write", "--config", str(config), "--args", '{"path": "/tmp/ok"}']
+    )
+
+    assert blocked.exit_code == 1
+    assert "no-etc" in blocked.output
+    assert allowed.exit_code == 0
+
+
+def test_explain_skips_guards_without_args(tmp_path: Path) -> None:
+    config = _policy_config(
+        tmp_path,
+        '  guards:\n    - { name: no-etc, arg: "$.path", pattern: "^/etc/", action: block }\n',
+    )
+    result = runner.invoke(app, ["explain", "write", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert "not evaluated" in result.output
+
+
+def test_explain_rejects_malformed_args(tmp_path: Path) -> None:
+    config = _policy_config(tmp_path, "  default: allow\n")
+    result = runner.invoke(app, ["explain", "x", "--config", str(config), "--args", "{oops"])
+
+    assert result.exit_code == 1
+    assert "not valid JSON" in result.output
+
+
+def test_explain_rejects_non_object_args(tmp_path: Path) -> None:
+    config = _policy_config(tmp_path, "  default: allow\n")
+    result = runner.invoke(app, ["explain", "x", "--config", str(config), "--args", "[1, 2]"])
+
+    assert result.exit_code == 1
+    assert "JSON object" in result.output
+
+
+def test_explain_does_not_consume_rate_limit_tokens(tmp_path: Path) -> None:
+    """Explaining a call must not spend the budget it is reporting on."""
+    config = _policy_config(
+        tmp_path,
+        "  rate_limits:\n    - { name: cap, scope: global, max_per_minute: 60, burst: 3 }\n",
+    )
+    for _ in range(5):
+        result = runner.invoke(app, ["explain", "echo", "--config", str(config)])
+        assert result.exit_code == 0
+    assert "3.0 of 3" in result.output
+
+
+# ------------- doctor -------------
+
+
+def test_doctor_flags_a_wide_open_configuration(tmp_path: Path) -> None:
+    config = tmp_path / "bastion.yaml"
+    config.write_text(
+        "upstreams:\n  a:\n    command: /nonexistent/binary\n"
+        "audit:\n  enabled: false\n"
+        "policy:\n  default: allow\n  pinning:\n    enabled: false\n"
+        "timeouts:\n  default_seconds: null\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["doctor", "--config", str(config)])
+
+    assert result.exit_code == 1  # the upstream is unreachable
+    assert "unreachable" in result.output
+    assert "default: deny" in result.output
+    assert "nothing to stop it" in result.output
+    assert "pinning is off" in result.output
+    assert "wedged upstream" in result.output
+
+
+def test_doctor_is_quiet_about_a_sound_configuration(tmp_path: Path) -> None:
+    """A tightened config draws no advice.
+
+    The upstream is deliberately unreachable: CliRunner replaces stdio with
+    objects that have no fileno(), which a real stdio transport needs. What is
+    under test here is the advice, so the connection result is ignored.
+    """
+    config = tmp_path / "bastion.yaml"
+    config.write_text(
+        "upstreams:\n  a:\n    command: /nonexistent\n"
+        "audit:\n  enabled: true\n  path: ./audit.jsonl\n"
+        "policy:\n  default: deny\n  permissions:\n    - { tool: echo, action: allow }\n"
+        "  rate_limits:\n    - { name: cap, scope: global, max_per_minute: 60 }\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["doctor", "--config", str(config)])
+
+    assert "nothing to flag" in result.output
+
+
+def test_doctor_reports_a_broken_audit_chain(tmp_path: Path) -> None:
+    from bastion.audit import AuditRecord, AuditWriter
+
+    audit = tmp_path / "audit.jsonl"
+    with AuditWriter(audit) as writer:
+        writer.write(AuditRecord(tool="a"))
+        writer.write(AuditRecord(tool="b"))
+
+    lines = audit.read_text(encoding="utf-8").splitlines()
+    tampered = json.loads(lines[1])
+    tampered["tool"] = "c"
+    audit.write_text(lines[0] + "\n" + json.dumps(tampered) + "\n", encoding="utf-8")
+
+    config = tmp_path / "bastion.yaml"
+    config.write_text(
+        f"upstreams:\n  a:\n    command: /nonexistent\naudit:\n  path: {audit.as_posix()}\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["doctor", "--config", str(config)])
+
+    assert "chain broken" in result.output

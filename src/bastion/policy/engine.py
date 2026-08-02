@@ -9,7 +9,7 @@ from typing import Any
 from bastion.config.schema import CostConfig, PolicyConfig
 from bastion.policy.budget import BudgetTracker, CostModel, DateTimeFn, utc_now
 from bastion.policy.guards import GuardEngine
-from bastion.policy.models import PolicyDecision
+from bastion.policy.models import Explanation, ExplanationStep, PolicyDecision
 from bastion.policy.permissions import PermissionChecker
 from bastion.policy.ratelimit import Clock, RateLimiter
 
@@ -99,3 +99,54 @@ class PolicyEngine:
     def redact_arguments(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
         """Apply every ``action='redact'`` guard and return a redacted copy."""
         return self._guards.redact(tool, arguments)
+
+    def explain(
+        self,
+        tool: str,
+        arguments: Mapping[str, Any] | None = None,
+    ) -> Explanation:
+        """Trace the whole decision for one call, layer by layer.
+
+        Unlike :meth:`check`, which stops at the first denial, this evaluates
+        every layer so the answer to "why can't my agent call this?" is one
+        command rather than a bisection of the config. Read-only: no tokens are
+        consumed and no budgets move.
+        """
+        steps: list[ExplanationStep] = []
+
+        permission = self._permissions.check(tool)
+        steps.append(
+            ExplanationStep(
+                layer="permissions",
+                allowed=permission.allowed,
+                detail=permission.reason,
+            )
+        )
+
+        if arguments is None:
+            steps.append(
+                ExplanationStep(
+                    layer="guards",
+                    allowed=True,
+                    detail="not evaluated — pass --args to test argument guards",
+                    skipped=True,
+                )
+            )
+        else:
+            ok, reason = self._guards.check_blocking(tool, arguments)
+            steps.append(
+                ExplanationStep(
+                    layer="guards",
+                    allowed=ok,
+                    detail=reason or "no blocking guard matched",
+                )
+            )
+
+        for name, headroom, ok in self._rate_limiter.describe(tool):
+            steps.append(ExplanationStep(layer=f"rate limit '{name}'", allowed=ok, detail=headroom))
+
+        cost = self._cost_model.cost_for(tool)
+        for name, usage, ok in self._budgets.describe(tool, cost):
+            steps.append(ExplanationStep(layer=f"budget '{name}'", allowed=ok, detail=usage))
+
+        return Explanation(tool=tool, steps=steps, cost=cost)

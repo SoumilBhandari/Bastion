@@ -2,11 +2,14 @@
 
 import asyncio
 import fnmatch
+import json
+import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
 from bastion import __version__
 from bastion.audit import iter_records, read_records, rotated_paths, tail_records, verify_records
@@ -14,6 +17,7 @@ from bastion.config import BastionConfig, ConfigError, find_config, load_config
 from bastion.dashboard import run_dashboard
 from bastion.gateway import build_gateway
 from bastion.gateway.app import build_mcp_config
+from bastion.policy import PolicyEngine
 from bastion.policy.pinning import PinChecker, PinStore, ToolFingerprint
 from bastion.viewer import format_record_line, render_records_table, render_stats
 
@@ -107,6 +111,163 @@ def validate(config: ConfigOption = None) -> None:
     count = len(cfg.upstreams)
     plural = "" if count == 1 else "s"
     typer.echo(f"OK - configuration is valid ({count} upstream{plural}).")
+
+
+@app.command()
+def explain(
+    tool: Annotated[str, typer.Argument(help="The tool name to evaluate policy for.")],
+    config: ConfigOption = None,
+    args: Annotated[
+        str | None,
+        typer.Option("--args", help='Arguments as JSON, e.g. \'{"path": "/etc/passwd"}\'.'),
+    ] = None,
+) -> None:
+    """Show exactly what policy would do with a call, and why.
+
+    Every layer is evaluated, not just the first one to refuse, so a call
+    blocked by several rules at once shows all of them. Nothing is consumed:
+    rate-limit tokens and budget counters are read, never spent.
+    """
+    cfg = _load(config)
+
+    arguments: dict[str, Any] | None = None
+    if args is not None:
+        try:
+            parsed = json.loads(args)
+        except json.JSONDecodeError as exc:
+            typer.echo(f"error: --args is not valid JSON: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        if not isinstance(parsed, dict):
+            typer.echo("error: --args must be a JSON object", err=True)
+            raise typer.Exit(code=1)
+        arguments = parsed
+
+    engine = PolicyEngine(cfg.policy, cost=cfg.cost)
+    result = engine.explain(tool, arguments)
+    console = Console()
+
+    verdict = "[green]ALLOWED[/green]" if result.allowed else "[red]DENIED[/red]"
+    console.print(f"{verdict}  [bold]{tool}[/bold]")
+    console.print()
+
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("")
+    table.add_column("Layer")
+    table.add_column("Detail", overflow="fold")
+    for step in result.steps:
+        if step.skipped:
+            mark = "[dim]-[/dim]"
+        else:
+            mark = "[green]✓[/green]" if step.allowed else "[red]✗[/red]"
+        table.add_row(mark, step.layer, f"[dim]{step.detail}[/dim]")
+    console.print(table)
+
+    console.print()
+    console.print(f"[dim]cost per call:[/dim] {result.cost:g}")
+    timeout = cfg.timeouts.for_tool(tool)
+    console.print(f"[dim]timeout:[/dim] {f'{timeout:g}s' if timeout else 'none'}")
+    listed = result.steps[0].allowed or not cfg.policy.hide_denied
+    console.print(f"[dim]visible in tools/list:[/dim] {'yes' if listed else 'no'}")
+
+    if not result.allowed:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def doctor(config: ConfigOption = None) -> None:
+    """Check the configuration, the upstreams, and the audit log for problems."""
+    cfg = _load(config)
+    console = Console()
+    problems = 0
+
+    console.print(f"[bold]config[/bold]  {find_config(config)}")
+    console.print(f"  [green]✓[/green] valid — {len(cfg.upstreams)} upstream(s)")
+
+    console.print("\n[bold]upstreams[/bold]")
+    for name, reachable, detail in asyncio.run(_probe_upstreams(cfg)):
+        if reachable:
+            console.print(f"  [green]✓[/green] {name} — {detail}")
+        else:
+            problems += 1
+            console.print(f"  [red]✗[/red] {name} — {detail}")
+
+    console.print("\n[bold]audit log[/bold]")
+    if not cfg.audit.enabled:
+        console.print("  [yellow]![/yellow] disabled — nothing your agent does is recorded")
+    elif not cfg.audit.path.exists():
+        console.print(f"  [dim]-[/dim] {cfg.audit.path} does not exist yet")
+    else:
+        report = verify_records(read_records(cfg.audit.path))
+        if report.ok:
+            console.print(f"  [green]✓[/green] {report.checked} records, chain intact")
+        else:
+            problems += 1
+            console.print(f"  [red]✗[/red] chain broken at {report.breaks[0]}")
+
+    console.print("\n[bold]advice[/bold]")
+    advice = _review_settings(cfg)
+    if not advice:
+        console.print("  [green]✓[/green] nothing to flag")
+    for note in advice:
+        console.print(f"  [yellow]![/yellow] {note}")
+
+    if problems:
+        raise typer.Exit(code=1)
+
+
+async def _probe_upstreams(cfg: BastionConfig) -> list[tuple[str, bool, str]]:
+    """Connect to each upstream on its own and report what it advertises."""
+    from fastmcp import Client
+    from fastmcp.server import create_proxy
+
+    from bastion.gateway.app import _upstream_to_mcp_server
+
+    results: list[tuple[str, bool, str]] = []
+    for name, upstream in cfg.upstreams.items():
+        single = {"mcpServers": {name: _upstream_to_mcp_server(upstream)}}
+        started = time.monotonic()
+        try:
+            async with Client(create_proxy(single, name="bastion-doctor")) as client:
+                tools = await client.list_tools()
+            elapsed = (time.monotonic() - started) * 1000
+            results.append((name, True, f"{len(tools)} tools, connected in {elapsed:.0f}ms"))
+        except Exception as exc:
+            results.append((name, False, f"unreachable: {type(exc).__name__}: {exc}"))
+    return results
+
+
+def _review_settings(cfg: BastionConfig) -> list[str]:
+    """Flag configurations that are legal but probably not what was intended."""
+    notes: list[str] = []
+    policy = cfg.policy
+
+    if policy.default == "allow" and not policy.permissions:
+        notes.append(
+            "policy.default is 'allow' with no permission rules — every tool on every "
+            "upstream is reachable. Consider default: deny with an allowlist."
+        )
+    if not policy.budgets and not policy.rate_limits:
+        notes.append("no rate limits and no budgets — a looping agent has nothing to stop it.")
+    if cfg.audit.enabled and not cfg.audit.log_arguments:
+        notes.append(
+            "audit.log_arguments is off, so the log records that a tool ran but not "
+            "what it was asked to do. audit.redact_secrets already keeps credentials out."
+        )
+    if cfg.audit.enabled and not cfg.audit.hash_chain:
+        notes.append("audit.hash_chain is off — edits to the audit log are undetectable.")
+    if not policy.pinning.enabled:
+        notes.append(
+            "policy.pinning is off — an upstream can change a tool's description, and "
+            "the agent will follow the new instructions."
+        )
+    if cfg.timeouts.default_seconds is None:
+        notes.append("timeouts.default_seconds is null — a wedged upstream will hang the agent.")
+    if cfg.gateway.transport == "http" and cfg.gateway.host not in _LOOPBACK_HOSTS:
+        notes.append(
+            f"the gateway binds to {cfg.gateway.host} with no authentication — anyone who "
+            "can reach it can drive your tools."
+        )
+    return notes
 
 
 @app.command()

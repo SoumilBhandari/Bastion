@@ -169,6 +169,20 @@ class BudgetTracker:
             self._counter(index, rule, tool).reserve(cost)
         self._save()
 
+    def describe(self, tool: str, cost: float) -> list[tuple[str, str, bool]]:
+        """Per-rule ``(name, usage, allowed)`` for this tool, for explanations."""
+        described = []
+        for index, rule in enumerate(self._rules):
+            counter = self._counter(index, rule, tool)
+            parts = []
+            if rule.max_calls is not None:
+                parts.append(f"{counter.calls}/{rule.max_calls} calls")
+            if rule.max_cost is not None:
+                parts.append(f"{counter.cost:g}/{rule.max_cost:g} cost")
+            usage = f"{', '.join(parts)} this {rule.per} ({rule.scope})"
+            described.append((rule.name, usage, counter.peek(cost)))
+        return described
+
     def _load(self) -> None:
         if self._checkpoint_path is None or not self._checkpoint_path.exists():
             return
