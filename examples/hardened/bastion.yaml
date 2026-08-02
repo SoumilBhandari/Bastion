@@ -35,11 +35,18 @@ policy:
   default: deny
   hide_denied: true
 
+# Tool names here are NOT prefixed, because this config declares a single
+# upstream. Bastion namespaces tools as <upstream>_<tool> only when several are
+# configured — with one, the upstream's own names pass straight through. A rule
+# written for the wrong form matches nothing and silently does nothing;
+# `bastion doctor` reports any rule that matches no advertised tool.
+  # Run `bastion doctor` after any edit here: under default-deny, an allowlist
+  # entry that matches nothing leaves the agent with no tools at all.
   permissions:
-    - { tool: "files_read_file",       action: allow }
-    - { tool: "files_read_text_file",  action: allow }
-    - { tool: "files_list_directory",  action: allow }
-    - { tool: "files_search_files",    action: allow }
+    - { tool: "read_file",       action: allow }
+    - { tool: "read_text_file",  action: allow }
+    - { tool: "list_directory",  action: allow }
+    - { tool: "search_files",    action: allow }
 
   rate_limits:
     - { name: overall, scope: global, max_per_minute: 60, burst: 10 }

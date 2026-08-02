@@ -4,10 +4,10 @@
 # Run the gateway with:
 #   bastion run --config examples/permissions/bastion.yaml
 #
-# Try it: a `files_read_*` or `files_list_*` call goes through, but a
-# `files_delete_*`, `files_move_*`, or `files_write_*` call is blocked
-# before reaching the upstream and recorded in `./bastion-audit.jsonl`
-# with `outcome: denied` and the rule that fired in `error`.
+# Try it: a `read_*` or `list_*` call goes through, but `write_file`,
+# `edit_file`, or `move_file` is blocked before reaching the upstream and
+# recorded in `./bastion-audit.jsonl` with `outcome: denied` and the rule that
+# fired in `error`.
 
 upstreams:
   files:
@@ -25,9 +25,14 @@ policy:
   # The most specific glob wins; ties break by definition order. So broader
   # `files_*` rules sit alongside narrower `files_delete_*` rules and the
   # delete rule wins for delete calls.
+# Tool names here are NOT prefixed, because this config declares a single
+# upstream. Bastion namespaces tools as <upstream>_<tool> only when several are
+# configured — with one, the upstream's own names pass straight through. A rule
+# written for the wrong form matches nothing and silently does nothing;
+# `bastion doctor` reports any rule that matches no advertised tool.
   permissions:
-    - { tool: "files_read_*",   action: allow }
-    - { tool: "files_list_*",   action: allow }
-    - { tool: "files_delete_*", action: deny  }
-    - { tool: "files_move_*",   action: deny  }
-    - { tool: "files_write_*",  action: deny  }
+    - { tool: "read_*",      action: allow }
+    - { tool: "list_*",      action: allow }
+    - { tool: "write_file",  action: deny  }
+    - { tool: "edit_file",   action: deny  }
+    - { tool: "move_file",   action: deny  }

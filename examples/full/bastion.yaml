@@ -47,10 +47,13 @@ policy:
   default: allow
   hide_denied: true        # denied tools never appear in tools/list
 
-  # Permission rules — most specific glob wins.
+  # Permission rules — most specific glob wins. Names are unprefixed because
+  # this config has a single upstream; uncomment the `github` upstream above and
+  # every tool becomes `<upstream>_<tool>` instead. `bastion doctor` reports any
+  # rule that matches none of the tools your upstreams actually advertise.
   permissions:
-    - { tool: "files_delete_*", action: deny }
-    - { tool: "files_move_*",   action: deny }
+    - { tool: "move_file",  action: deny }
+    - { tool: "write_file", action: deny }
 
   # Token-bucket rate limits.
   rate_limits:

@@ -4,6 +4,7 @@ import asyncio
 import fnmatch
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -199,12 +200,26 @@ def doctor(config: ConfigOption = None) -> None:
     console.print(f"  [green]✓[/green] valid — {len(cfg.upstreams)} upstream(s)")
 
     console.print("\n[bold]upstreams[/bold]")
-    for name, reachable, detail in asyncio.run(_probe_upstreams(cfg)):
-        if reachable:
-            console.print(f"  [green]✓[/green] {name} — {detail}")
+    probes = asyncio.run(_probe_upstreams(cfg))
+    for probe in probes:
+        if probe.reachable:
+            console.print(f"  [green]✓[/green] {probe.name} — {probe.detail}")
         else:
             problems += 1
-            console.print(f"  [red]✗[/red] {name} — {detail}")
+            console.print(f"  [red]✗[/red] {probe.name} — {probe.detail}")
+
+    advertised = sorted({tool for probe in probes for tool in probe.tools})
+    if advertised:
+        console.print("\n[bold]rules[/bold]")
+        idle = _rules_matching_nothing(cfg, advertised)
+        if not idle:
+            console.print(
+                f"  [green]✓[/green] every rule matches at least one of "
+                f"{len(advertised)} advertised tools"
+            )
+        for note in idle:
+            problems += 1
+            console.print(f"  [red]✗[/red] {note}")
 
     console.print("\n[bold]audit log[/bold]")
     if not cfg.audit.enabled:
@@ -241,14 +256,25 @@ def doctor(config: ConfigOption = None) -> None:
         raise typer.Exit(code=1)
 
 
-async def _probe_upstreams(cfg: BastionConfig) -> list[tuple[str, bool, str]]:
+@dataclass(frozen=True)
+class UpstreamProbe:
+    """What one upstream said when `bastion doctor` connected to it."""
+
+    name: str
+    reachable: bool
+    detail: str
+    tools: tuple[str, ...] = ()
+
+
+async def _probe_upstreams(cfg: BastionConfig) -> list[UpstreamProbe]:
     """Connect to each upstream on its own and report what it advertises."""
     from fastmcp import Client
     from fastmcp.server import create_proxy
 
     from bastion.gateway.app import _upstream_to_mcp_server
 
-    results: list[tuple[str, bool, str]] = []
+    results: list[UpstreamProbe] = []
+    multiple = len(cfg.upstreams) > 1
     for name, upstream in cfg.upstreams.items():
         single = {"mcpServers": {name: _upstream_to_mcp_server(upstream)}}
         started = time.monotonic()
@@ -256,10 +282,50 @@ async def _probe_upstreams(cfg: BastionConfig) -> list[tuple[str, bool, str]]:
             async with Client(create_proxy(single, name="bastion-doctor")) as client:
                 tools = await client.list_tools()
             elapsed = (time.monotonic() - started) * 1000
-            results.append((name, True, f"{len(tools)} tools, connected in {elapsed:.0f}ms"))
+            # Probed one at a time, so no namespace prefix is applied here; the
+            # gateway only adds one when several upstreams are configured.
+            names = tuple(f"{name}_{tool.name}" if multiple else tool.name for tool in tools)
+            results.append(
+                UpstreamProbe(
+                    name, True, f"{len(tools)} tools, connected in {elapsed:.0f}ms", names
+                )
+            )
         except Exception as exc:
-            results.append((name, False, f"unreachable: {type(exc).__name__}: {exc}"))
+            results.append(UpstreamProbe(name, False, f"unreachable: {type(exc).__name__}: {exc}"))
     return results
+
+
+def _rules_matching_nothing(cfg: BastionConfig, advertised: list[str]) -> list[str]:
+    """Rules whose glob matches none of the tools the upstreams actually expose.
+
+    A rule matching nothing is nearly always a name that does not exist — most
+    often carrying the namespace prefix, which the gateway adds only when
+    several upstreams are configured. Such a rule is silently inert: a deny that
+    never denies, or an allowlist entry that leaves default-deny blocking
+    everything. Nothing at config-validation time can tell that from a rule kept
+    deliberately for a tool that is simply not connected today, which is exactly
+    why it is worth saying out loud here, where the real tool names are known.
+    """
+    notes: list[str] = []
+    for rule in cfg.policy.permissions:
+        if not fnmatch.filter(advertised, rule.tool):
+            notes.append(
+                f"permission rule '{rule.tool}' ({rule.action}) matches none of the "
+                "advertised tools — it can never take effect"
+            )
+    for guard in cfg.policy.guards:
+        if not fnmatch.filter(advertised, guard.match):
+            notes.append(
+                f"guard '{guard.name}' applies to '{guard.match}', which matches none of "
+                "the advertised tools"
+            )
+    for response_guard in cfg.policy.responses.guards:
+        if not fnmatch.filter(advertised, response_guard.match):
+            notes.append(
+                f"response guard '{response_guard.name}' applies to "
+                f"'{response_guard.match}', which matches none of the advertised tools"
+            )
+    return notes
 
 
 def _review_settings(cfg: BastionConfig) -> list[str]:
@@ -355,8 +421,12 @@ policy:
   default: allow
   permissions:
     # Most-specific rule wins; broader rules come first.
-    - { tool: "files_read_*",   action: allow }
-    - { tool: "files_delete_*", action: deny  }
+    #
+    # These names are unprefixed because there is a single upstream above. Add a
+    # second and every tool becomes <upstream>_<tool>, so the rules need the
+    # prefix too. `bastion doctor` reports any rule that matches nothing.
+    - { tool: "read_*",     action: allow }
+    - { tool: "write_file", action: deny  }
 """
 
 

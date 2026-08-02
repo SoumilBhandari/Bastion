@@ -91,3 +91,42 @@ def test_explain_runs_against_a_real_config(project: Path) -> None:
     result = _run("explain", "echo", cwd=project)
     assert result.returncode == 0
     assert "ALLOWED" in result.stdout
+
+
+def test_doctor_flags_rules_that_match_no_advertised_tool(
+    tmp_path: Path, sample_upstream: Path, python_exe: str
+) -> None:
+    """The namespace prefix is the classic way to write a rule that never fires."""
+    (tmp_path / "bastion.yaml").write_text(
+        f"upstreams:\n  sample:\n    command: {python_exe}\n    args: ['{sample_upstream}']\n"
+        "audit:\n  enabled: false\n"
+        "policy:\n"
+        "  default: allow\n"
+        "  permissions:\n"
+        # With one upstream the real name is `delete_thing`, not `sample_delete_thing`.
+        "    - { tool: 'sample_delete_thing', action: deny }\n"
+        "    - { tool: 'echo', action: allow }\n",
+        encoding="utf-8",
+    )
+    result = _run("doctor", cwd=tmp_path)
+
+    assert result.returncode == 1
+    flat = " ".join(result.stdout.split())
+    assert "sample_delete_thing" in flat
+    assert "can never take effect" in flat
+
+
+def test_doctor_is_quiet_when_every_rule_matches(
+    tmp_path: Path, sample_upstream: Path, python_exe: str
+) -> None:
+    (tmp_path / "bastion.yaml").write_text(
+        f"upstreams:\n  sample:\n    command: {python_exe}\n    args: ['{sample_upstream}']\n"
+        "audit:\n  enabled: false\n"
+        "policy:\n"
+        "  default: allow\n"
+        "  permissions:\n    - { tool: 'delete_thing', action: deny }\n",
+        encoding="utf-8",
+    )
+    result = _run("doctor", cwd=tmp_path)
+
+    assert "every rule matches" in " ".join(result.stdout.split())
