@@ -1,0 +1,73 @@
+# A locked-down Bastion configuration, for pointing an agent at an MCP server
+# you have not audited and do not particularly trust.
+#
+# Run with:  bastion pin --approve --config examples/hardened/bastion.yaml
+#            bastion run --config examples/hardened/bastion.yaml
+#
+# Pin first: under `on_change: block` below, a tool whose definition drifts is
+# quarantined, and the first run is what establishes the baseline. Review what
+# the upstream advertises before approving it — pinning defends against a change
+# after you looked, not against a server that was hostile to begin with.
+#
+# Every choice here trades convenience for containment. Read
+# ../../docs/security.md for what each one is actually worth.
+
+upstreams:
+  files:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"]
+
+audit:
+  enabled: true
+  path: ./bastion-audit.jsonl
+  log_arguments: true      # keep the evidence; redact_secrets keeps the secrets out
+  redact_secrets: true
+  hash_chain: true
+  fsync: true              # survive power loss, at a disk round trip per call
+  max_bytes: null          # never rotate: keep the whole history
+
+timeouts:
+  default_seconds: 30      # fail fast rather than letting the agent stall
+
+policy:
+  # Nothing is reachable unless it is listed. New tools an upstream adds later
+  # are denied by default instead of silently becoming available.
+  default: deny
+  hide_denied: true
+
+  permissions:
+    - { tool: "files_read_file",       action: allow }
+    - { tool: "files_read_text_file",  action: allow }
+    - { tool: "files_list_directory",  action: allow }
+    - { tool: "files_search_files",    action: allow }
+
+  rate_limits:
+    - { name: overall, scope: global, max_per_minute: 60, burst: 10 }
+
+  budgets:
+    - { name: hourly-calls, scope: global, per: hour, max_calls: 500 }
+  budget_checkpoint: ./bastion-budgets.json
+
+  guards:
+    # Keep the agent inside the workspace, whatever it was told to read.
+    - name: no-parent-traversal
+      arg: "$..path"
+      pattern: '\.\.'
+      action: block
+    - name: no-dotfiles
+      arg: "$..path"
+      pattern: '(^|/)\.(env|git|ssh|aws)\b'
+      action: block
+
+  responses:
+    redact_secrets: true
+    detect_injection: block   # refuse a suspicious result rather than annotating it
+    guards:
+      - name: no-private-keys
+        pattern: '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+        action: block
+
+  pinning:
+    enabled: true
+    path: ./bastion-pins.json
+    on_change: block          # a changed tool is quarantined until re-approved

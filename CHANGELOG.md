@@ -6,6 +6,93 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Tamper-evident audit log.** Each record carries the hash of the record
+  before it, so altering, reordering, or deleting one breaks every link after
+  it. `bastion verify` walks the chain and names the first record that does not
+  hold, with `--include-rotated` to check rotated generations as one sequence.
+  This detects tampering rather than preventing it — the head hash it prints is
+  the value to anchor somewhere an attacker cannot reach.
+- **Response inspection.** Results are now examined on the way back to the
+  agent. Credentials in output are masked before they enter the model's context
+  (`policy.responses.redact_secrets`, with `allow_secrets_from` for tools whose
+  job is returning secrets). Text matching prompt-injection heuristics is
+  flagged in the audit log and prefixed with a caution naming it untrusted data
+  (`detect_injection`, defaulting to `warn` rather than `block`, because these
+  are heuristics and a document *about* prompt injection will trip them).
+  Operator-supplied `responses.guards` can redact or block on their own regex.
+- **Tool-definition pinning.** Definitions are fingerprinted on first sight and
+  compared on every listing after, so a server that changes a tool's description
+  after you approved it is noticed. `bastion pin` shows what changed with the
+  pinned and current text side by side; `--approve` accepts it. Under
+  `policy.pinning.on_change: block` a drifted tool is quarantined — hidden from
+  listings and refused on call.
+- **Built-in credential redaction** in the audit log (`audit.redact_secrets`),
+  covering AWS, GitHub, Slack, Stripe, Google, Anthropic/OpenAI-style keys,
+  JWTs, private-key blocks, `Authorization` headers, and credentials embedded in
+  URLs. Arguments whose *name* looks sensitive are masked whole.
+- **Environment interpolation** in the config: `${VAR}`, `${VAR:-default}`, and
+  `$${VAR}` to escape. A `.env` beside the config is read too, which matters
+  over stdio where the MCP client controls the process environment.
+- **Call timeouts** (`timeouts.default_seconds`, default 120s, with `per_tool`
+  overrides). A wedged upstream previously hung the agent indefinitely.
+- **Policy-filtered listings.** Denied tools, resources, resource templates, and
+  prompts are removed from listings (`policy.hide_denied`), so an agent is never
+  offered something it cannot use.
+- **Audit log rotation** (`audit.max_bytes`, `audit.keep`) and optional
+  `audit.fsync`. The chain continues across a rotation.
+- **`bastion explain <tool>`** — traces every policy layer for a call, not just
+  the first to refuse, including guards against `--args`, rate-limit headroom,
+  budget state, resolved cost and timeout, and listing visibility. Read-only.
+- **`bastion doctor`** — connects to each upstream, verifies the audit chain,
+  and reviews the config for settings that are legal but usually unintended.
+- **Benchmarks** (`benchmarks/bench_gateway.py`). On an M4 Max the full stack
+  adds ~0.33 ms to a ~2.4 ms call.
+- Audit records gained `cost` (what the call was actually charged, `null` if it
+  never ran) and `flags` (response-guard findings), both surfaced in
+  `bastion logs`, `bastion tail`, and the dashboard.
+- `examples/hardened/` — a default-deny containment config, and an index of the
+  examples.
+
+### Fixed
+
+- **Failed tool calls were audited as successful.** An upstream tool that raises
+  does not propagate an exception through the proxy; FastMCP marshals the
+  failure into a result with `is_error=True`. The audit middleware only
+  inspected exceptions, so every failed call was recorded with outcome `ok` and
+  no error.
+- **Config paths were resolved against the working directory**, so
+  `bastion run --config ~/mcp/bastion.yaml` wrote the audit log and budget
+  checkpoint into whatever directory it happened to be launched from. They now
+  read as relative to the config file that declares them.
+- **`bastion tail` stopped following after a rotation.** It tracked a byte
+  offset, so once the log rotated it seeked past the end of the new, smaller
+  file and silently followed nothing.
+- **Oversized values bypassed the scanners entirely.** Text past the size cap
+  was skipped rather than scanned, so padding a response hid a credential or a
+  prompt injection completely. It is now scanned up to the limit.
+- The error boundary now covers resource reads and prompt fetches, which reach
+  the same upstreams over the same transports; previously only tool calls were
+  wrapped, so a transport failure on either leaked a raw traceback to the agent.
+- The audit writer keeps its file handle open and flushes each record, instead
+  of reopening the file per record.
+
+### Security
+
+- **The dashboard is gated on a per-session token**, printed in the URL at
+  startup. It serves the complete audit log — every argument the agent passed —
+  and previously did so to anything that could reach the port. `--no-token`
+  opts out for use behind an authenticating proxy.
+
+### Changed
+
+- The dashboard reads the log incrementally instead of re-parsing it in full on
+  every poll, and shows response-guard findings, spend, filters, and a banner
+  when the hash chain does not verify.
+- CI runs on macOS alongside Linux and Windows, measures coverage (94%, gated at
+  90%), and smoke-runs the benchmark.
+
 ## [1.0.2] - 2026-05-29
 
 ### Security

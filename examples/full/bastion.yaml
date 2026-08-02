@@ -1,31 +1,53 @@
-# Bastion configuration showcasing the full policy surface:
-# permissions + rate limits + budgets + argument guards, with audit on.
+# Bastion configuration showing the whole surface at once: permissions, rate
+# limits, budgets, argument guards, response scanning, tool pinning, timeouts,
+# and a tamper-evident audit log.
 #
 # Run with:  bastion run --config examples/full/bastion.yaml
 #
-# Then experiment with `bastion logs`, `bastion stats`, and `bastion tail`
-# in a second terminal to see what's getting recorded.
+# In a second terminal, try `bastion tail`, `bastion stats`, `bastion verify`,
+# and `bastion explain <tool>` to see what is being recorded and decided.
+#
+# For a stricter starting point, see ../hardened/bastion.yaml.
 
 upstreams:
   files:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
 
+  # An HTTP upstream, with its credential read from the environment or from a
+  # .env file sitting beside this config — never written here.
+  # github:
+  #   url: https://api.githubcopilot.com/mcp/
+  #   headers:
+  #     Authorization: Bearer ${GITHUB_TOKEN}
+
 audit:
   enabled: true
   path: ./bastion-audit.jsonl
+  redact_secrets: true     # mask credentials before they reach the file
+  hash_chain: true         # make later edits detectable (`bastion verify`)
+  fsync: false             # true also survives power loss, at a disk round trip per call
+  max_bytes: 100000000     # rotate past 100 MB
+  keep: 5
 
 cost:
   default_per_call: 0.0
   per_tool:
-    # Imagine a paid search API charged per call (units are unit-agnostic;
-    # treat them as whatever currency the budget caps below are denominated in).
+    # Imagine a paid search API charged per call. Units are arbitrary — treat
+    # them as whatever currency the budget caps below are denominated in.
     search_web: 0.01
+
+timeouts:
+  default_seconds: 120
+  per_tool:
+    # A tool that legitimately takes a while needs its own allowance.
+    run_test_suite: 900
 
 policy:
   default: allow
+  hide_denied: true        # denied tools never appear in tools/list
 
-  # Permission rules — most specific wins.
+  # Permission rules — most specific glob wins.
   permissions:
     - { tool: "files_delete_*", action: deny }
     - { tool: "files_move_*",   action: deny }
@@ -36,14 +58,15 @@ policy:
     - { name: per-tool,   scope: per_tool, max_per_minute: 60 }
 
   # Windowed budgets — call counts and cost caps. Counters are persisted to
-  # `budget_checkpoint` so caps survive restarts.
+  # budget_checkpoint, so caps survive a restart.
   budgets:
     - { name: hourly-calls, scope: global, per: hour, max_calls: 1000 }
     - { name: daily-spend,  scope: global, per: day,  max_cost: 5.00 }
   budget_checkpoint: ./bastion-budgets.json
 
-  # Argument guards — regex on JSONPath. `block` denies the call; `redact`
-  # masks the matched value in the audit log only (the call still proceeds).
+  # Argument guards — a regex on a JSONPath into the call's arguments.
+  # `block` denies the call; `redact` masks the value in the audit log only,
+  # leaving what the upstream receives unchanged.
   guards:
     - name: redact-bearer
       arg: "$.headers.Authorization"
@@ -54,3 +77,20 @@ policy:
       arg: "$.command"
       pattern: 'rm\s+-rf'
       action: block
+
+  # What happens to results on the way back to the agent.
+  responses:
+    redact_secrets: true       # a leaked credential never enters the model's context
+    allow_secrets_from: []     # e.g. ["vault_*"] for a tool whose job is returning secrets
+    detect_injection: warn     # warn | block | off
+    guards:
+      - name: no-internal-hostnames
+        pattern: '\.internal\.corp\b'
+        action: redact
+
+  # Notice when an upstream changes a tool's description or schema.
+  # Review changes with `bastion pin`, accept with `bastion pin --approve`.
+  pinning:
+    enabled: true
+    path: ./bastion-pins.json
+    on_change: warn            # `block` quarantines a drifted tool until re-approved
