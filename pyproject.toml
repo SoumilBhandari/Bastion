@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bastion-mcp"
 version = "1.0.2"
-description = "A local-first control plane for your AI agent's tools — cap spend, rate-limit, and audit every MCP tool call."
+description = "A local-first control plane for your AI agent's tools — permissions, spend caps, prompt-injection and secret scanning, and a tamper-evident audit log for every MCP tool call."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -15,9 +15,15 @@ keywords = [
     "mcp",
     "model-context-protocol",
     "ai-agents",
+    "ai-security",
+    "agent-security",
     "llm",
     "gateway",
+    "proxy",
+    "guardrails",
+    "prompt-injection",
     "rate-limiting",
+    "audit-log",
     "claude",
 ]
 classifiers = [
@@ -28,6 +34,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Security",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
 ]
 dependencies = [
     "fastmcp>=3.3,<4",
@@ -55,6 +64,8 @@ bastion = "bastion.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/SoumilBhandari/Bastion"
+Documentation = "https://github.com/SoumilBhandari/Bastion/blob/main/docs/configuration.md"
+Changelog = "https://github.com/SoumilBhandari/Bastion/blob/main/CHANGELOG.md"
 Repository = "https://github.com/SoumilBhandari/Bastion"
 Issues = "https://github.com/SoumilBhandari/Bastion/issues"
 
