@@ -119,6 +119,48 @@ def test_load_config_keeps_a_disabled_budget_checkpoint_disabled(tmp_path: Path)
     assert load_config(config_file).policy.budget_checkpoint is None
 
 
+def test_load_config_expands_environment_references(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("BASTION_TEST_TOKEN", "sk-secret")
+    config_file = tmp_path / "bastion.yaml"
+    config_file.write_text(
+        "upstreams:\n"
+        "  remote:\n"
+        "    url: https://example.test/mcp\n"
+        "    headers:\n"
+        "      Authorization: Bearer ${BASTION_TEST_TOKEN}\n",
+        encoding="utf-8",
+    )
+    config = load_config(config_file)
+    assert config.upstreams["remote"].headers["Authorization"] == "Bearer sk-secret"
+
+
+def test_load_config_reads_secrets_from_a_dotenv_beside_it(tmp_path: Path) -> None:
+    (tmp_path / ".env").write_text("BASTION_DOTENV_TOKEN=from-dotenv\n", encoding="utf-8")
+    config_file = tmp_path / "bastion.yaml"
+    config_file.write_text(
+        "upstreams:\n"
+        "  remote:\n"
+        "    url: https://example.test/mcp\n"
+        "    headers:\n"
+        "      Authorization: ${BASTION_DOTENV_TOKEN}\n",
+        encoding="utf-8",
+    )
+    config = load_config(config_file)
+    assert config.upstreams["remote"].headers["Authorization"] == "from-dotenv"
+
+
+def test_load_config_rejects_unset_environment_references(tmp_path: Path) -> None:
+    config_file = tmp_path / "bastion.yaml"
+    config_file.write_text(
+        "upstreams:\n  files:\n    command: ${BASTION_DEFINITELY_UNSET_VAR}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="BASTION_DEFINITELY_UNSET_VAR"):
+        load_config(config_file)
+
+
 def test_load_config_rejects_invalid_yaml(tmp_path: Path) -> None:
     config_file = tmp_path / "bad.yaml"
     config_file.write_text("upstreams: [unclosed", encoding="utf-8")

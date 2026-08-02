@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from bastion.config.env import EnvError, build_environment, interpolate
 from bastion.config.schema import BastionConfig
 
 DEFAULT_CONFIG_NAME = "bastion.yaml"
@@ -63,12 +64,18 @@ def load_config(path: Path) -> BastionConfig:
             f"got {type(raw).__name__}"
         )
 
+    base = path.resolve().parent
+    try:
+        raw = interpolate(raw, build_environment(base, os.environ))
+    except EnvError as exc:
+        raise ConfigError(f"config file {path}: {exc}") from exc
+
     try:
         config = BastionConfig.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(_format_validation_error(path, exc)) from exc
 
-    anchor_paths(config, path.resolve().parent)
+    anchor_paths(config, base)
     return config
 
 

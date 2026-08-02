@@ -31,3 +31,6 @@ bastion-budgets.json
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local secrets referenced from bastion.yaml as ${VAR}
+.env
