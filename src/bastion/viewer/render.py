@@ -40,16 +40,38 @@ def render_records_table(
     table.add_column("Tool")
     table.add_column("Outcome")
     table.add_column("Duration", justify="right")
-    table.add_column("Error", overflow="fold")
+    table.add_column("Detail", overflow="fold")
     for record in records:
         table.add_row(
             shorten_timestamp(str(record.get("timestamp", ""))),
             str(record.get("tool", "")),
             style_outcome(str(record.get("outcome", ""))),
             f"{float(record.get('duration_ms', 0)):.1f}ms",
-            str(record.get("error") or ""),
+            _detail(record),
         )
     console.print(table)
+
+
+def format_flags(record: dict[str, Any]) -> str:
+    """Render a record's response-guard findings, if it has any.
+
+    A call that succeeded but returned a leaked credential or a prompt
+    injection is still an ``ok`` row; without the flags it reads as routine.
+    """
+    flags = record.get("flags")
+    if not isinstance(flags, list) or not flags:
+        return ""
+    return " ".join(f"[magenta]{flag}[/magenta]" for flag in flags)
+
+
+def _detail(record: dict[str, Any]) -> str:
+    """The error, the flags, or both — whatever the record has to say."""
+    parts = []
+    if error := record.get("error"):
+        parts.append(str(error))
+    if flags := format_flags(record):
+        parts.append(flags)
+    return "\n".join(parts)
 
 
 def format_record_line(record: dict[str, Any]) -> str:
@@ -60,7 +82,8 @@ def format_record_line(record: dict[str, Any]) -> str:
     duration = f"{float(record.get('duration_ms', 0)):.1f}ms"
     err = record.get("error")
     err_part = f" [red]{err}[/red]" if err else ""
-    return f"[dim]{ts}[/dim] {outcome} {tool} {duration}{err_part}"
+    flag_part = f" {flags}" if (flags := format_flags(record)) else ""
+    return f"[dim]{ts}[/dim] {outcome} {tool} {duration}{err_part}{flag_part}"
 
 
 def render_stats(

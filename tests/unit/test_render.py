@@ -5,9 +5,11 @@ from __future__ import annotations
 from io import StringIO
 from typing import Any
 
+import pytest
 from rich.console import Console
 
 from bastion.viewer.render import (
+    format_flags,
     format_record_line,
     render_records_table,
     render_stats,
@@ -106,3 +108,59 @@ def test_format_record_line_includes_error_when_present() -> None:
     )
     assert "boom" in line
     assert "kaboom" in line
+
+
+# ------------- response-guard findings -------------
+
+
+def test_flags_are_rendered_when_present() -> None:
+    rendered = format_flags({"flags": ["injection:instruction-override", "secret:aws"]})
+    assert "injection:instruction-override" in rendered
+    assert "secret:aws" in rendered
+
+
+def test_no_flags_renders_nothing() -> None:
+    assert format_flags({"flags": None}) == ""
+    assert format_flags({"flags": []}) == ""
+    assert format_flags({}) == ""
+
+
+def test_malformed_flags_render_nothing() -> None:
+    assert format_flags({"flags": "not-a-list"}) == ""
+
+
+def test_a_streamed_line_shows_its_flags() -> None:
+    line = format_record_line(
+        {
+            "timestamp": "2026-05-25T10:00:00Z",
+            "tool": "fetch",
+            "outcome": "ok",
+            "duration_ms": 3.0,
+            "flags": ["injection:role-reassignment"],
+        }
+    )
+    assert "injection:role-reassignment" in line
+
+
+def test_a_clean_streamed_line_has_no_flag_noise() -> None:
+    line = format_record_line(
+        {"timestamp": "2026-05-25T10:00:00Z", "tool": "echo", "outcome": "ok", "duration_ms": 1.0}
+    )
+    assert line.endswith("1.0ms")
+
+
+def test_the_table_shows_flags_for_a_successful_call(capsys: pytest.CaptureFixture[str]) -> None:
+    """A call that succeeded but leaked a credential must not read as routine."""
+    render_records_table(
+        [
+            {
+                "timestamp": "2026-05-25T10:00:00Z",
+                "tool": "fetch",
+                "outcome": "ok",
+                "duration_ms": 2.0,
+                "flags": ["secret:github-token"],
+            }
+        ],
+        console=Console(width=200),
+    )
+    assert "secret:github-token" in capsys.readouterr().out

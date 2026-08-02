@@ -1,6 +1,7 @@
 """Rendering helpers for the audit log viewer CLI commands."""
 
 from bastion.viewer.render import (
+    format_flags,
     format_record_line,
     render_records_table,
     render_stats,
@@ -9,6 +10,7 @@ from bastion.viewer.render import (
 )
 
 __all__ = [
+    "format_flags",
     "format_record_line",
     "render_records_table",
     "render_stats",
