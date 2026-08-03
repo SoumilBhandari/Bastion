@@ -229,3 +229,71 @@ def test_restarting_straight_after_a_rotation_continues_the_chain(tmp_path: Path
     combined = [r for path in [*rotated_paths(log), log] for r in _read(path)]
     report = verify_records(combined)
     assert report.ok, [str(b) for b in report.breaks]
+
+
+# ------------- verifying a chain a piece at a time -------------
+
+
+def test_feeding_in_pieces_matches_verifying_all_at_once(tmp_path: Path) -> None:
+    """The dashboard verifies incrementally; it must reach the same conclusion."""
+    from bastion.audit.chain import ChainVerifier
+
+    log = tmp_path / "audit.jsonl"
+    _write(log, 9)
+    records = _read(log)
+
+    verifier = ChainVerifier()
+    for start in range(0, len(records), 2):
+        verifier.feed(records[start : start + 2])
+
+    batch = verify_records(records)
+    assert verifier.report.ok == batch.ok
+    assert verifier.report.checked == batch.checked
+    assert verifier.report.head == batch.head
+
+
+def test_a_break_is_found_when_fed_in_pieces(tmp_path: Path) -> None:
+    from bastion.audit.chain import ChainVerifier
+
+    log = tmp_path / "audit.jsonl"
+    _write(log, 6)
+    records = _read(log)
+    records[4]["tool"] = "tampered"
+
+    verifier = ChainVerifier()
+    for record in records:
+        verifier.feed([record])
+
+    assert not verifier.report.ok
+    assert verifier.report.breaks[0].index == 4
+
+
+def test_a_break_stays_broken_when_more_records_arrive(tmp_path: Path) -> None:
+    """Everything after a break is unverifiable; later records cannot undo it."""
+    from bastion.audit.chain import ChainVerifier
+
+    log = tmp_path / "audit.jsonl"
+    _write(log, 6)
+    records = _read(log)
+    records[2]["tool"] = "tampered"
+
+    verifier = ChainVerifier()
+    verifier.feed(records[:4])
+    assert not verifier.report.ok
+
+    verifier.feed(records[4:])
+    assert not verifier.report.ok
+
+
+def test_an_empty_feed_changes_nothing(tmp_path: Path) -> None:
+    from bastion.audit.chain import ChainVerifier
+
+    log = tmp_path / "audit.jsonl"
+    _write(log, 3)
+    verifier = ChainVerifier()
+    verifier.feed(_read(log))
+    before = verifier.report.checked
+
+    verifier.feed([])
+    assert verifier.report.checked == before
+    assert verifier.report.ok

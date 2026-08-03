@@ -144,3 +144,46 @@ def test_a_rotation_that_cannot_rename_does_not_fail_the_write(
     writer.close()
 
     assert len(log.read_text(encoding="utf-8").splitlines()) == 20
+
+
+# ------------- values JSON cannot represent -------------
+
+
+def test_a_non_finite_argument_is_written_as_valid_json(tmp_path: Path) -> None:
+    """json.dumps emits bare Infinity, which no conforming parser accepts."""
+    log = tmp_path / "audit.jsonl"
+    with AuditWriter(log) as writer:
+        writer.write(AuditRecord(tool="calc", arguments={"x": float("inf")}))
+
+    def reject_constants(name: str) -> object:
+        raise AssertionError(f"non-JSON constant in the log: {name}")
+
+    parsed = json.loads(log.read_text(encoding="utf-8"), parse_constant=reject_constants)
+    assert parsed["arguments"]["x"] == "inf"
+
+
+def test_non_finite_values_survive_the_hash_chain(tmp_path: Path) -> None:
+    """Sanitising before hashing keeps the written line and the hashed content the same."""
+    from bastion.audit import read_records, verify_records
+
+    log = tmp_path / "audit.jsonl"
+    with AuditWriter(log) as writer:
+        writer.write(AuditRecord(tool="a", arguments={"x": float("nan")}))
+        writer.write(AuditRecord(tool="b", arguments={"y": float("-inf")}))
+
+    report = verify_records(read_records(log))
+    assert report.ok
+    assert report.checked == 2
+
+
+def test_json_safe_leaves_ordinary_values_alone() -> None:
+    from bastion.audit.record import json_safe
+
+    original = {"a": 1, "b": 1.5, "c": "text", "d": None, "e": [1, {"f": True}]}
+    assert json_safe(original) == original
+
+
+def test_json_safe_recurses() -> None:
+    from bastion.audit.record import json_safe
+
+    assert json_safe({"a": [{"b": float("inf")}]}) == {"a": [{"b": "inf"}]}

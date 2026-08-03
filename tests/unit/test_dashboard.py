@@ -220,3 +220,57 @@ def test_only_the_most_recent_records_are_returned(tmp_path: Path) -> None:
 
     assert data["summary"]["total"] == RECENT_LIMIT + 25  # counted in full
     assert len(data["records"]) == RECENT_LIMIT  # but not all returned
+
+
+# ------------- the incremental view must match the batch one -------------
+
+
+def test_the_summary_matches_recomputing_it_from_scratch(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    log.write_text("", encoding="utf-8")
+    client = _client(log)
+
+    written: list[dict[str, Any]] = []
+    for index in range(12):
+        record = {
+            "tool": f"t{index % 3}",
+            "outcome": ["ok", "denied", "error"][index % 3],
+            "duration_ms": float(index),
+            "cost": 0.01,
+            "flags": ["injection:x"] if index % 4 == 0 else None,
+        }
+        written.append(record)
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+        client.get("/api/audit")  # poll after each append, as the page does
+
+    incremental = client.get("/api/audit").json()["summary"]
+    batch = _summarize(written)
+
+    for key in ("total", "ok", "denied", "errors", "flagged", "total_ms", "spend"):
+        assert incremental[key] == batch[key], key
+    assert incremental["top_tools"] == batch["top_tools"]
+    assert incremental["top_flags"] == batch["top_flags"]
+
+
+def test_the_summary_resets_when_the_log_is_replaced(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    log.write_text(f"{_record('old')}\n" * 6, encoding="utf-8")
+    client = _client(log)
+    assert client.get("/api/audit").json()["summary"]["total"] == 6
+
+    log.write_text(f"{_record('fresh')}\n", encoding="utf-8")
+    summary = client.get("/api/audit").json()["summary"]
+    assert summary["total"] == 1
+    assert summary["top_tools"] == [{"name": "fresh", "calls": 1}]
+
+
+def test_a_non_finite_value_in_an_old_log_does_not_break_the_api(tmp_path: Path) -> None:
+    """Logs written before non-finite values were sanitised still have to load."""
+    log = tmp_path / "audit.jsonl"
+    log.write_text(
+        '{"tool":"calc","outcome":"ok","duration_ms":1.0,"arguments":{"x":Infinity}}\n',
+        encoding="utf-8",
+    )
+    response = _client(log).get("/api/audit")
+    assert response.status_code == 200

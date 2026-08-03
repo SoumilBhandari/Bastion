@@ -201,3 +201,74 @@ def test_incremental_log_tolerates_a_missing_file(tmp_path: Path) -> None:
     from bastion.audit.reader import IncrementalLog
 
     assert IncrementalLog(tmp_path / "absent.jsonl").records() == []
+
+
+# ------------- corruption a reader has to survive -------------
+
+
+def test_a_non_utf8_byte_costs_one_record_not_the_command(tmp_path: Path) -> None:
+    """One stray byte used to take down logs, stats, verify and the dashboard."""
+    from bastion.audit import read_records
+
+    log = tmp_path / "audit.jsonl"
+    log.write_bytes(b'{"tool":"before"}\n' + b'{"tool":"\xff\xfe"}\n' + b'{"tool":"after"}\n')
+
+    tools = [record["tool"] for record in read_records(log)]
+
+    assert "before" in tools
+    assert "after" in tools
+
+
+def test_a_truncated_final_line_is_ignored(tmp_path: Path) -> None:
+    from bastion.audit import read_records
+
+    log = tmp_path / "audit.jsonl"
+    log.write_bytes(b'{"tool":"complete"}\n{"tool":"trunca')
+
+    assert [record["tool"] for record in read_records(log)] == ["complete"]
+
+
+def test_incremental_log_survives_a_read_that_splits_a_character(tmp_path: Path) -> None:
+    """A poll can land mid-record, and mid-record is often mid-character."""
+    from bastion.audit import AuditRecord, AuditWriter
+    from bastion.audit.reader import IncrementalLog
+
+    source = tmp_path / "source.jsonl"
+    with AuditWriter(source) as writer:
+        writer.write(AuditRecord(tool="日本語", arguments={"text": "テキスト" * 40}))
+    complete = source.read_bytes()
+
+    log = tmp_path / "audit.jsonl"
+    log.write_bytes(complete[: len(complete) // 2])  # split inside a multi-byte character
+    reader = IncrementalLog(log)
+    assert reader.records() == []  # nothing usable yet, but no exception
+
+    log.write_bytes(complete)
+    assert [record["tool"] for record in reader.records()] == ["日本語"]
+
+
+def test_new_records_returns_only_what_arrived(tmp_path: Path) -> None:
+    from bastion.audit.reader import IncrementalLog
+
+    log = tmp_path / "audit.jsonl"
+    log.write_bytes(b'{"tool":"a"}\n')
+    reader = IncrementalLog(log)
+    assert [r["tool"] for r in reader.new_records()] == ["a"]
+    assert reader.new_records() == []
+
+    with log.open("ab") as handle:
+        handle.write(b'{"tool":"b"}\n')
+    assert [r["tool"] for r in reader.new_records()] == ["b"]
+
+
+def test_new_records_returns_everything_after_a_rotation(tmp_path: Path) -> None:
+    """The caller's accumulated view is invalid once the file is replaced."""
+    from bastion.audit.reader import IncrementalLog
+
+    log = tmp_path / "audit.jsonl"
+    log.write_bytes(b'{"tool":"old"}\n' * 5)
+    reader = IncrementalLog(log)
+    assert len(reader.new_records()) == 5
+
+    log.write_bytes(b'{"tool":"fresh"}\n')
+    assert [r["tool"] for r in reader.new_records()] == ["fresh"]

@@ -74,6 +74,98 @@ class ChainReport:
         return not self.breaks
 
 
+class ChainVerifier:
+    """Verifies a chain, and can be fed the rest of it later.
+
+    Verification is sequential, so a caller watching a growing log — the
+    dashboard polls one every 1.5 seconds — can hash only what arrived since
+    last time instead of the whole file again. Re-verifying from the start on
+    every poll makes the cost of watching a log grow with its length, which for
+    an append-only file means it gets slower forever.
+    """
+
+    def __init__(self) -> None:
+        self.report = ChainReport()
+        self._expected_prev: str | None = None
+        self._index = 0
+        self._stopped = False
+
+    def feed(self, records: Iterable[Mapping[str, Any]]) -> ChainReport:
+        """Verify further records, continuing from wherever the last call ended."""
+        if self._stopped:
+            return self.report
+        self._verify(records)
+        return self.report
+
+    def _verify(self, records: Iterable[Mapping[str, Any]]) -> None:
+        report = self.report
+        expected_prev = self._expected_prev
+
+        for record in records:
+            index = self._index
+            self._index += 1
+            stored = record.get(HASH_FIELD)
+            call_id = record.get("call_id")
+            call_id = str(call_id) if call_id is not None else None
+
+            if not isinstance(stored, str):
+                if expected_prev is None:
+                    report.unchained += 1
+                    continue
+                report.breaks.append(
+                    ChainBreak(index, call_id, "record is missing its hash — chain truncated here")
+                )
+                break
+
+            prev = record.get(PREV_FIELD)
+            prev = prev if isinstance(prev, str) else ""
+
+            if expected_prev is None:
+                report.starts_at_genesis = prev == GENESIS
+                # A chain that opens mid-stream cannot legitimately sit behind
+                # unchained records. When chaining is switched on, the writer starts
+                # a fresh chain at genesis, so unchained history is always followed
+                # by a genesis link. Anything else means the records in between were
+                # chained once and had their chain fields stripped — the cheapest way
+                # to rewrite a prefix of the log while the tail still verifies and
+                # the head hash is unchanged.
+                if report.unchained and prev != GENESIS:
+                    report.breaks.append(
+                        ChainBreak(
+                            index,
+                            call_id,
+                            f"{report.unchained} record(s) before this one carry no hash, but this "
+                            "one continues a chain — their chain fields were removed",
+                        )
+                    )
+                    break
+            elif prev != expected_prev:
+                report.breaks.append(
+                    ChainBreak(
+                        index, call_id, f"expected prev {expected_prev[:12]}…, found {prev[:12]}…"
+                    )
+                )
+                break
+
+            computed = record_hash(record, prev)
+            if computed != stored:
+                report.breaks.append(
+                    ChainBreak(
+                        index, call_id, "contents do not match the recorded hash — record altered"
+                    )
+                )
+                break
+
+            report.checked += 1
+            report.head = stored
+            expected_prev = stored
+
+        self._expected_prev = expected_prev
+        # A break is final. Everything after the first one is unverifiable, so
+        # a later feed must not quietly resume as though the chain still held.
+        self._stopped = bool(report.breaks)
+
+
 def verify_records(records: Iterable[Mapping[str, Any]]) -> ChainReport:
     """Verify that a sequence of audit records forms an unbroken hash chain.
 
@@ -82,64 +174,4 @@ def verify_records(records: Iterable[Mapping[str, Any]]) -> ChainReport:
     was never chained is not evidence of tampering. Once a chained record is
     seen, every record after it must also be chained.
     """
-    report = ChainReport()
-    expected_prev: str | None = None
-
-    for index, record in enumerate(records):
-        stored = record.get(HASH_FIELD)
-        call_id = record.get("call_id")
-        call_id = str(call_id) if call_id is not None else None
-
-        if not isinstance(stored, str):
-            if expected_prev is None:
-                report.unchained += 1
-                continue
-            report.breaks.append(
-                ChainBreak(index, call_id, "record is missing its hash — chain truncated here")
-            )
-            break
-
-        prev = record.get(PREV_FIELD)
-        prev = prev if isinstance(prev, str) else ""
-
-        if expected_prev is None:
-            report.starts_at_genesis = prev == GENESIS
-            # A chain that opens mid-stream cannot legitimately sit behind
-            # unchained records. When chaining is switched on, the writer starts
-            # a fresh chain at genesis, so unchained history is always followed
-            # by a genesis link. Anything else means the records in between were
-            # chained once and had their chain fields stripped — the cheapest way
-            # to rewrite a prefix of the log while the tail still verifies and
-            # the head hash is unchanged.
-            if report.unchained and prev != GENESIS:
-                report.breaks.append(
-                    ChainBreak(
-                        index,
-                        call_id,
-                        f"{report.unchained} record(s) before this one carry no hash, but this "
-                        "one continues a chain — their chain fields were removed",
-                    )
-                )
-                break
-        elif prev != expected_prev:
-            report.breaks.append(
-                ChainBreak(
-                    index, call_id, f"expected prev {expected_prev[:12]}…, found {prev[:12]}…"
-                )
-            )
-            break
-
-        computed = record_hash(record, prev)
-        if computed != stored:
-            report.breaks.append(
-                ChainBreak(
-                    index, call_id, "contents do not match the recorded hash — record altered"
-                )
-            )
-            break
-
-        report.checked += 1
-        report.head = stored
-        expected_prev = stored
-
-    return report
+    return ChainVerifier().feed(records)
