@@ -308,8 +308,8 @@ policy:
     - { name: daily-spend, scope: global, per: day, max_cost: 5.00 }
 
   guards:
-    - { name: no-rm-rf, match: "shell_*", arg: "$.command",
-        pattern: 'rm\s+-rf', action: block }
+    - { name: no-rm-rf, match: "shell_*", arg: "$..command",
+        pattern: 'rm\s+-rf', action: block }   # $.. searches at any depth
 ```
 
 <details>

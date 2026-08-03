@@ -309,6 +309,21 @@ the denial is recorded with the rule name in `error`. A `redact` guard
 replaces the matched value with `***` in the audit log — the actual
 upstream call is unchanged.
 
+**Prefer the recursive form.** `$.command` matches a `command` argument at the
+top level and nowhere else, so a tool that nests its arguments — `{"payload":
+{"command": …}}` — slips past a guard that looks correct. `$..command` matches
+a `command` anywhere in the arguments, including inside lists, and `$..*`
+tests every value. Guards already look inside structured values (a list is
+tested element by element *and* as a space-joined command line, so
+`["rm", "-rf", "/"]` cannot smuggle a command past a string pattern), but that
+only helps once the path has selected the value.
+
+| Path | Matches |
+|---|---|
+| `$.command` | only a top-level `command` |
+| `$..command` | a `command` at any depth, including inside lists |
+| `$..*` | every value in the arguments |
+
 ```yaml
 policy:
   guards:

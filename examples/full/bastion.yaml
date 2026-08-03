@@ -70,14 +70,17 @@ policy:
   # Argument guards — a regex on a JSONPath into the call's arguments.
   # `block` denies the call; `redact` masks the value in the audit log only,
   # leaving what the upstream receives unchanged.
+  #
+  # Note the `$..` form: `$.command` matches only a top-level `command`, so a
+  # tool that nests its arguments slips past a guard that looks correct.
   guards:
     - name: redact-bearer
-      arg: "$.headers.Authorization"
+      arg: "$..Authorization"
       pattern: "^Bearer "
       action: redact
     - name: no-rm-rf
       match: "shell_*"
-      arg: "$.command"
+      arg: "$..command"
       pattern: 'rm\s+-rf'
       action: block
 
