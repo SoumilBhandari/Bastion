@@ -424,3 +424,13 @@ def test_load_config_anchors_the_pinning_path(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert load_config(config_file).policy.pinning.path == nested.resolve() / "pins.json"
+
+
+def test_load_config_reports_a_self_referential_yaml_alias(tmp_path: Path) -> None:
+    """An alias that refers to itself must not surface as a RecursionError."""
+    config_file = tmp_path / "bastion.yaml"
+    config_file.write_text(
+        "loop: &x\n  inner: *x\nupstreams:\n  a:\n    command: y\n", encoding="utf-8"
+    )
+    with pytest.raises(ConfigError, match="levels deep"):
+        load_config(config_file)

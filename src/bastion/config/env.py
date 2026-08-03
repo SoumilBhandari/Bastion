@@ -19,6 +19,16 @@ from typing import Any
 
 ENV_FILE_NAME = ".env"
 
+MAX_DEPTH = 100
+"""How deep a config may nest before it is refused.
+
+PyYAML resolves an alias that refers to itself into a structure that contains
+itself, which is infinitely deep. Walking it to substitute environment
+variables then recurses until Python gives up, and the operator sees a
+RecursionError traceback instead of being told their config is malformed. No
+real Bastion config comes close to this depth.
+"""
+
 _REFERENCE = re.compile(
     r"""
     \$(?P<escape>\$)?          # a doubled $ escapes the reference
@@ -98,13 +108,30 @@ def interpolate(value: Any, env: Mapping[str, str]) -> Any:
     return result
 
 
-def _walk(value: Any, env: Mapping[str, str], location: str, missing: list[str]) -> Any:
+def _walk(
+    value: Any,
+    env: Mapping[str, str],
+    location: str,
+    missing: list[str],
+    depth: int = 0,
+) -> Any:
+    if depth > MAX_DEPTH:
+        raise EnvError(
+            f"config is nested more than {MAX_DEPTH} levels deep at '{location}'. "
+            "A YAML alias that refers to itself does this — the document is "
+            "infinitely deep and cannot be read."
+        )
     if isinstance(value, str):
         return _expand(value, env, location or "(top level)", missing)
     if isinstance(value, dict):
-        return {key: _walk(item, env, _join(location, key), missing) for key, item in value.items()}
+        return {
+            key: _walk(item, env, _join(location, key), missing, depth + 1)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [_walk(item, env, f"{location}[{i}]", missing) for i, item in enumerate(value)]
+        return [
+            _walk(item, env, f"{location}[{i}]", missing, depth + 1) for i, item in enumerate(value)
+        ]
     return value
 
 

@@ -109,3 +109,28 @@ def test_process_environment_overrides_the_env_file(tmp_path: Path) -> None:
     merged = build_environment(tmp_path, {"TOKEN": "from-process"})
     assert merged["TOKEN"] == "from-process"
     assert merged["ONLY_FILE"] == "x"
+
+
+def test_a_self_referential_document_is_refused_not_a_recursion_error() -> None:
+    """PyYAML resolves a self-referring alias into a structure containing itself."""
+    document: dict[str, object] = {"upstreams": {}}
+    document["loop"] = document
+
+    with pytest.raises(EnvError, match="levels deep"):
+        interpolate(document, {})
+
+
+def test_a_self_referential_list_is_refused() -> None:
+    inner: list[object] = []
+    inner.append(inner)
+
+    with pytest.raises(EnvError, match="levels deep"):
+        interpolate({"a": inner}, {})
+
+
+def test_ordinary_nesting_is_still_accepted() -> None:
+    document: dict[str, object] = {"value": "${NAME}"}
+    for _ in range(20):
+        document = {"nested": document}
+
+    assert interpolate(document, {"NAME": "ok"}) is not None
