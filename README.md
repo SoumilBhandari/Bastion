@@ -296,7 +296,7 @@ upstreams:
 policy:
   default: deny                                  # allowlist what you actually use
   permissions:
-    - { tool: "files_read_*", action: allow }    # most specific rule wins
+    - { tool: "files_read_*", action: allow }    # most specific wins; deny wins ties
     - { tool: "github_*",     action: allow }
     - { tool: "*_delete_*",   action: deny }
 

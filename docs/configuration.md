@@ -218,9 +218,17 @@ Each `PermissionRule`:
 | `tool` | tool glob | e.g. `files_*`, `files_delete_*`, `*` |
 | `action` | `allow` \| `deny` | |
 
-When several rules match a tool, the most specific glob (most literal
-characters) wins; ties break by definition order. When no rule matches,
-`default` applies.
+When several rules match a tool, the most specific glob wins — the one with
+the most literal (non-wildcard) characters. When two equally specific rules
+disagree, **`deny` wins**: the tie means the config does not actually say which
+was meant, and the safe reading of an ambiguous security rule is the
+restrictive one. Definition order breaks whatever is left. When no rule
+matches, `default` applies.
+
+A config that gives the *same* pattern both an `allow` and a `deny` is
+rejected outright, because one of those two lines would silently do nothing —
+and if it were the `deny`, the config would read as protective while
+permitting exactly what it was written to stop.
 
 ```yaml
 policy:

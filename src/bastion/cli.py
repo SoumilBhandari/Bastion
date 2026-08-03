@@ -343,6 +343,18 @@ def _review_settings(cfg: BastionConfig) -> list[str]:
         )
     if not policy.budgets and not policy.rate_limits:
         notes.append("no rate limits and no budgets — a looping agent has nothing to stop it.")
+
+    # A spend cap charges against the cost model, which defaults to zero. Left
+    # at the default, the cap is real, configured, visible in the file — and can
+    # never be reached, because every call costs nothing.
+    spend_caps = [rule.name for rule in policy.budgets if rule.max_cost is not None]
+    priced = cfg.cost.default_per_call > 0 or any(cost > 0 for cost in cfg.cost.per_tool.values())
+    if spend_caps and not priced:
+        listed = ", ".join(f"'{name}'" for name in spend_caps)
+        notes.append(
+            f"budget {listed} caps spend, but every call costs 0 — set cost.default_per_call "
+            "or cost.per_tool, or the cap can never be reached."
+        )
     if cfg.audit.enabled and not cfg.audit.log_arguments:
         notes.append(
             "audit.log_arguments is off, so the log records that a tool ran but not "

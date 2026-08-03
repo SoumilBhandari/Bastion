@@ -33,9 +33,12 @@ class _CompiledRule:
 class PermissionChecker:
     """Evaluates per-tool allow/deny rules.
 
-    When several rules match a tool, the most specific wins (most literal
-    characters; ties broken by definition order). When none match, the
-    configured default applies.
+    When several rules match a tool, the most specific wins — most literal
+    characters. When two equally specific rules disagree, ``deny`` wins: the
+    tie means the config does not actually say which was meant, and the safe
+    reading of an ambiguous security rule is the restrictive one. Definition
+    order breaks what is left, so two rules that agree still name the first.
+    When no rule matches, the configured default applies.
     """
 
     def __init__(self, rules: list[PermissionRule], default: Action) -> None:
@@ -50,8 +53,19 @@ class PermissionChecker:
                 allowed=self._default == "allow",
                 reason=f"no rule matched; default is '{self._default}'",
             )
-        winner = max(matches, key=lambda rule: (rule.specificity, -rule.order))
+        winner = max(matches, key=_precedence)
         return PolicyDecision(
             allowed=winner.action == "allow",
             reason=f"{winner.action} by rule '{winner.pattern}'",
         )
+
+
+def _precedence(rule: _CompiledRule) -> tuple[int, int, int]:
+    """Sort key deciding which of several matching rules applies.
+
+    Specificity first, then deny over allow, then definition order. The middle
+    term is what keeps an operator's explicit ``deny`` from being quietly
+    overruled by an equally specific ``allow`` that merely happened to be
+    written first.
+    """
+    return (rule.specificity, 1 if rule.action == "deny" else 0, -rule.order)

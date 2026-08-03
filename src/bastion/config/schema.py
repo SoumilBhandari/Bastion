@@ -302,6 +302,28 @@ class PolicyConfig(BaseModel):
     responses: ResponseConfig = Field(default_factory=ResponseConfig)
     pinning: PinningConfig = Field(default_factory=PinningConfig)
 
+    @model_validator(mode="after")
+    def _reject_contradictory_permissions(self) -> PolicyConfig:
+        """Refuse a config that both allows and denies the same exact pattern.
+
+        Two rules with the identical ``tool`` say opposite things about every
+        tool they match, so there is no reading of the file that honours both.
+        Resolving it silently means one of the two lines the operator wrote does
+        nothing — and if the ignored one is the ``deny``, the config reads as
+        protective while permitting exactly what it was written to stop.
+        """
+        actions: dict[str, set[str]] = {}
+        for rule in self.permissions:
+            actions.setdefault(rule.tool, set()).add(rule.action)
+        conflicting = sorted(tool for tool, seen in actions.items() if len(seen) > 1)
+        if conflicting:
+            listed = ", ".join(f"'{tool}'" for tool in conflicting)
+            raise ValueError(
+                f"permission rules both allow and deny the same pattern: {listed}. "
+                "Remove one of each pair — as written, one of them has no effect."
+            )
+        return self
+
 
 class BastionConfig(BaseModel):
     """The top-level Bastion configuration."""
