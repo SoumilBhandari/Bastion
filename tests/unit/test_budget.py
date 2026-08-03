@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -292,3 +293,39 @@ def test_tracker_ignores_stale_rule_entries(tmp_path: Path) -> None:
     # Loaded counter for rule 0 is still there
     ok, _ = tracker2.peek("t", 0.0)
     assert ok
+
+
+# ------------- a checkpoint that says something impossible -------------
+
+
+def test_a_negative_call_count_in_a_checkpoint_is_clamped(tmp_path: Path) -> None:
+    """A negative counter would hand back budget that had already been spent."""
+    checkpoint = tmp_path / "budgets.json"
+    checkpoint.write_text(
+        json.dumps({"0:": {"window": "2026-08-03", "calls": -999, "cost": 0.0}}),
+        encoding="utf-8",
+    )
+    rules = [BudgetRule(name="cap", scope="global", per="day", max_calls=2)]
+    tracker = BudgetTracker(
+        rules, now=lambda: datetime(2026, 8, 3, tzinfo=UTC), checkpoint_path=checkpoint
+    )
+
+    for _ in range(2):
+        assert tracker.peek("x", 0.0)[0]
+        tracker.reserve("x", 0.0)
+    assert not tracker.peek("x", 0.0)[0]
+
+
+def test_a_negative_cost_in_a_checkpoint_is_clamped(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "budgets.json"
+    checkpoint.write_text(
+        json.dumps({"0:": {"window": "2026-08-03", "calls": 0, "cost": -1000.0}}),
+        encoding="utf-8",
+    )
+    rules = [BudgetRule(name="spend", scope="global", per="day", max_cost=1.0)]
+    tracker = BudgetTracker(
+        rules, now=lambda: datetime(2026, 8, 3, tzinfo=UTC), checkpoint_path=checkpoint
+    )
+
+    tracker.reserve("x", 1.0)
+    assert not tracker.peek("x", 0.01)[0]

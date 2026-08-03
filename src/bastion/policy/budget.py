@@ -108,10 +108,15 @@ class BudgetCounter:
 
         The next access (peek/reserve) will roll the window forward if the
         snapshot is from an earlier window, resetting the counters.
+
+        Counters are clamped to zero. A checkpoint holding a negative count is
+        not something this writes, so it is either corruption or an edit — and
+        either way it would silently hand back budget that had been spent,
+        which is the one thing a spend cap exists to prevent.
         """
         self._window = str(state["window"])
-        self._calls = int(state["calls"])
-        self._cost = float(state["cost"])
+        self._calls = max(0, int(state["calls"]))
+        self._cost = max(0.0, float(state["cost"]))
 
 
 class BudgetTracker:
