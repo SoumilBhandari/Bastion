@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import secrets
+import time
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +15,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
-from bastion.audit.chain import ChainVerifier
-from bastion.audit.reader import IncrementalLog
+from bastion.audit.chain import ChainReport, verify_records
+from bastion.audit.reader import IncrementalLog, read_records
 from bastion.audit.record import json_safe
 from bastion.config.schema import BastionConfig
 
@@ -22,6 +24,14 @@ _INDEX_HTML = (Path(__file__).parent / "index.html").read_text(encoding="utf-8")
 
 RECENT_LIMIT = 500
 TOP_TOOLS = 8
+
+VERIFY_INTERVAL_SECONDS = 5.0
+"""How often the whole chain is re-checked, however fast the page polls.
+
+Detecting an edit to an already-seen record means reading the file again, so
+this is the trade: a poll costs nothing most of the time, and tampering is
+reported within this many seconds rather than never. `bastion verify` remains
+the authoritative check and always reads everything."""
 
 
 def new_token() -> str:
@@ -57,19 +67,29 @@ def _summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
 class _LiveLog:
     """The dashboard's view of a growing log, kept up to date incrementally.
 
-    The page polls every 1.5 seconds. Re-reading, re-hashing and re-summarising
-    the whole file on each poll makes watching a log cost more the longer it
-    gets — on an append-only file, forever. Records are read from where the
-    last poll stopped, the chain is verified only over what is new, and the
-    totals are accumulated rather than recomputed.
+    The page polls every 1.5 seconds. Re-reading and re-summarising the whole
+    file each time makes watching a log cost more the longer it gets — on an
+    append-only file, forever. Records are read from where the last poll
+    stopped and the totals accumulate rather than being recomputed.
+
+    Chain verification deliberately does *not* work that way. Verifying only
+    what is new is faster still, but it never looks at a record twice, so
+    editing one the dashboard had already checked went unnoticed and the page
+    kept reporting an intact chain for a log `bastion verify` rejects — the
+    one thing the banner exists to catch. Verification re-reads the whole file,
+    throttled to :data:`VERIFY_INTERVAL_SECONDS` so a fast poll cannot pin a
+    core, which bounds how long tampering can go unreported rather than
+    allowing it indefinitely.
     """
 
-    def __init__(self, log: IncrementalLog) -> None:
+    def __init__(self, log: IncrementalLog, *, now: Callable[[], float] = time.monotonic) -> None:
         self._log = log
+        self._now = now
+        self._chain = ChainReport()
+        self._verified_at: float | None = None
         self._reset()
 
     def _reset(self) -> None:
-        self._verifier = ChainVerifier()
         self._counts: Counter[str] = Counter()
         self._tools: Counter[str] = Counter()
         self._flags: Counter[str] = Counter()
@@ -80,7 +100,7 @@ class _LiveLog:
 
     def snapshot(self) -> dict[str, Any]:
         self._take_in(self._log.new_records())
-        chain = self._verifier.report
+        chain = self._verify()
         return {
             "records": list(reversed(self._log.records()))[:RECENT_LIMIT],
             "summary": {
@@ -105,13 +125,27 @@ class _LiveLog:
             },
         }
 
+    def _verify(self) -> ChainReport:
+        """Re-verify the whole log, at most once every VERIFY_INTERVAL_SECONDS.
+
+        Re-read from disk rather than checked against the records held in
+        memory: an in-place edit does not change the file's length, so the
+        incremental reader would never see it and the cached copy would still
+        look intact.
+        """
+        now = self._now()
+        if self._verified_at is not None and now - self._verified_at < VERIFY_INTERVAL_SECONDS:
+            return self._chain
+        self._chain = verify_records(read_records(self._log.path))
+        self._verified_at = now
+        return self._chain
+
     def _take_in(self, fresh: list[dict[str, Any]]) -> None:
         if len(self._log.records()) < self._total:
             # Rotated or truncated: the totals accumulated so far describe a
             # file that no longer exists, so start the whole view again.
             self._reset()
             fresh = self._log.records()
-        self._verifier.feed(fresh)
         for record in fresh:
             self._total += 1
             self._counts[str(record.get("outcome", ""))] += 1
@@ -124,7 +158,12 @@ class _LiveLog:
                     self._flags[str(flag)] += 1
 
 
-def build_dashboard_app(config: BastionConfig, *, token: str | None = None) -> Starlette:
+def build_dashboard_app(
+    config: BastionConfig,
+    *,
+    token: str | None = None,
+    now: Callable[[], float] = time.monotonic,
+) -> Starlette:
     """Build the Starlette app that serves the audit-log dashboard.
 
     The dashboard serves the raw audit log, arguments included, so it is gated
@@ -134,7 +173,7 @@ def build_dashboard_app(config: BastionConfig, *, token: str | None = None) -> S
     something else is doing the authenticating.
     """
     log = IncrementalLog(config.audit.path)
-    state = _LiveLog(log)
+    state = _LiveLog(log, now=now)
 
     def authorized(request: Request) -> bool:
         if token is None:

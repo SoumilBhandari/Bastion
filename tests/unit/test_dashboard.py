@@ -1,14 +1,16 @@
 """Unit tests for the audit-log web dashboard."""
 
 import json
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import pytest
 from starlette.testclient import TestClient
 
 from bastion.audit import AuditRecord, AuditWriter
 from bastion.config.schema import BastionConfig
-from bastion.dashboard.app import _summarize, build_dashboard_app
+from bastion.dashboard.app import VERIFY_INTERVAL_SECONDS, _summarize, build_dashboard_app
 
 TOKEN = "test-token"
 
@@ -274,3 +276,98 @@ def test_a_non_finite_value_in_an_old_log_does_not_break_the_api(tmp_path: Path)
     )
     response = _client(log).get("/api/audit")
     assert response.status_code == 200
+
+
+# ------------- tampering with records already seen -------------
+
+
+def _counted(tmp_path: Path) -> "Callable[[], int]":
+    """Count calls to the chain verifier the dashboard uses."""
+    import bastion.dashboard.app as app_module
+
+    calls = [0]
+    original = app_module.verify_records
+
+    def counting(records: object) -> object:
+        calls[0] += 1
+        return original(records)  # type: ignore[arg-type]
+
+    app_module.verify_records = counting  # type: ignore[assignment]
+    _RESTORE.append(lambda: setattr(app_module, "verify_records", original))
+    return lambda: calls[0]
+
+
+_RESTORE: list["Callable[[], None]"] = []
+
+
+@pytest.fixture(autouse=True)
+def _restore_patches() -> "Iterator[None]":
+    yield
+    while _RESTORE:
+        _RESTORE.pop()()
+
+
+def _chained(log: Path, count: int) -> None:
+    with AuditWriter(log) as writer:
+        for index in range(count):
+            writer.write(AuditRecord(tool=f"t{index}"))
+
+
+def _edit_record(log: Path, index: int) -> None:
+    lines = log.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[index])
+    record["tool"] = "innocuous"
+    lines[index] = json.dumps(record)
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_editing_a_record_the_dashboard_already_saw_is_detected(tmp_path: Path) -> None:
+    """Verifying only new records never looks at one twice, and missed exactly this."""
+    log = tmp_path / "audit.jsonl"
+    _chained(log, 6)
+
+    clock = [0.0]
+    client = TestClient(build_dashboard_app(_config(log), now=lambda: clock[0]))
+    assert client.get("/api/audit").json()["chain"]["ok"]
+
+    _edit_record(log, 1)
+    clock[0] += VERIFY_INTERVAL_SECONDS + 0.1
+
+    chain = client.get("/api/audit").json()["chain"]
+    assert not chain["ok"]
+    assert chain["problem"]
+
+
+def test_verification_is_throttled_between_rapid_polls(tmp_path: Path) -> None:
+    """The page polls every 1.5s; re-hashing the whole log each time is the cost being avoided."""
+    log = tmp_path / "audit.jsonl"
+    _chained(log, 4)
+
+    clock = [0.0]
+    verifications = _counted(tmp_path)
+    client = TestClient(build_dashboard_app(_config(log), now=lambda: clock[0]))
+
+    for _ in range(6):
+        client.get("/api/audit")  # all within one interval
+    assert verifications() == 1
+
+    clock[0] += VERIFY_INTERVAL_SECONDS + 0.1
+    client.get("/api/audit")
+    assert verifications() == 2
+
+
+def test_a_new_record_is_visible_before_the_next_verification(tmp_path: Path) -> None:
+    """Throttling verification must not delay the records themselves."""
+    log = tmp_path / "audit.jsonl"
+    _chained(log, 2)
+
+    clock = [0.0]
+    client = TestClient(build_dashboard_app(_config(log), now=lambda: clock[0]))
+    assert client.get("/api/audit").json()["summary"]["total"] == 2
+
+    with AuditWriter(log) as writer:
+        writer.write(AuditRecord(tool="just_now"))
+
+    data = client.get("/api/audit").json()  # same instant, no re-verification
+    assert data["summary"]["total"] == 3
+    assert data["records"][0]["tool"] == "just_now"
