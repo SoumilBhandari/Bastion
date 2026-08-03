@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -70,6 +71,7 @@ class AuditMiddleware(Middleware):
         self._log_arguments = log_arguments
         self._redact_fn = redact_fn
         self._redact_secrets = redact_secrets
+        self._failures = 0
 
     def _arguments(self, name: str, raw: Any) -> dict[str, Any] | None:
         if not raw:
@@ -126,7 +128,38 @@ class AuditMiddleware(Middleware):
             collected = notes.end(token)
             record.flags = collected.flags or None
             record.cost = collected.cost
+            self._persist(record)
+
+    def _persist(self, record: AuditRecord) -> None:
+        """Write the record, without letting a write failure rewrite history.
+
+        This runs in a ``finally``, so anything raised here replaces whatever
+        the call was about to return or raise. A full disk turned a tool call
+        that had already run — already moved the money, already deleted the
+        file — into a failure the agent was told about, and an agent told a
+        call failed retries it. The side effect happens twice and the log
+        records neither.
+
+        Failing to record is still serious, so it is not swallowed quietly: it
+        goes to stderr, where an operator and their process supervisor can see
+        it. What it must not do is change the outcome of work already done.
+        """
+        try:
             self._writer.write(record)
+        except Exception as exc:
+            self._failures += 1
+            if self._should_report(self._failures):
+                print(
+                    f"[bastion] cannot write the audit log ({exc}). "
+                    f"{self._failures} record(s) lost so far; calls are still being served.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+    @staticmethod
+    def _should_report(failures: int) -> bool:
+        """Report the first failure, then back off — a full disk fails every call."""
+        return failures <= 3 or failures % 100 == 0
 
     async def on_call_tool(
         self,

@@ -126,3 +126,21 @@ def test_rotated_paths_are_returned_oldest_first(tmp_path: Path) -> None:
 
 def test_rotated_paths_is_empty_when_nothing_rotated(tmp_path: Path) -> None:
     assert rotated_paths(tmp_path / "audit.jsonl") == []
+
+
+def test_a_rotation_that_cannot_rename_does_not_fail_the_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows refuses to rename a file another process has open — a reader does."""
+    log = tmp_path / "audit.jsonl"
+    writer = AuditWriter(log, max_bytes=150, keep=2)
+
+    def refuse(*_: object, **__: object) -> None:
+        raise PermissionError(13, "used by another process")
+
+    monkeypatch.setattr("bastion.audit.writer._rotate", refuse)
+    for index in range(20):
+        writer.write(AuditRecord(tool=f"t{index}"))  # must not raise
+    writer.close()
+
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 20

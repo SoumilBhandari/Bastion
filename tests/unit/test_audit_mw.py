@@ -69,3 +69,67 @@ async def test_a_cancelled_call_is_not_recorded_as_a_success(tmp_path: Path) -> 
     record = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
     assert record["outcome"] == "cancelled"
     assert record["error"]
+
+
+# ------------- a broken log must not break the call -------------
+
+
+class _BrokenWriter:
+    """A writer whose disk is full."""
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    def write(self, record: object) -> None:
+        self.attempts += 1
+        raise OSError(28, "No space left on device")
+
+
+async def _call(middleware: AuditMiddleware, *, fails: bool = False) -> object:
+    context = SimpleNamespace(message=SimpleNamespace(name="payments_transfer", arguments={}))
+
+    async def call_next(_: object) -> ToolResult:
+        if fails:
+            raise RuntimeError("upstream said no")
+        return ToolResult(content=[_text("transferred")])
+
+    return await middleware.on_call_tool(context, call_next)
+
+
+async def test_a_failed_audit_write_does_not_fail_a_completed_call() -> None:
+    """The side effect already happened; telling the agent it failed invites a retry."""
+    middleware = AuditMiddleware(_BrokenWriter())  # type: ignore[arg-type]
+
+    result = await _call(middleware)
+
+    assert result.content[0].text == "transferred"
+
+
+async def test_a_failed_audit_write_does_not_mask_the_real_error() -> None:
+    """The write happens in a finally; raising there would replace the real exception."""
+    middleware = AuditMiddleware(_BrokenWriter())  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="upstream said no"):
+        await _call(middleware, fails=True)
+
+
+async def test_a_failed_audit_write_is_reported(capsys: pytest.CaptureFixture[str]) -> None:
+    """Losing records is serious; it must not be swallowed silently."""
+    middleware = AuditMiddleware(_BrokenWriter())  # type: ignore[arg-type]
+
+    await _call(middleware)
+
+    assert "cannot write the audit log" in capsys.readouterr().err
+
+
+async def test_repeated_audit_failures_are_not_reported_every_time(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A full disk fails every call; one line per call would bury the terminal."""
+    middleware = AuditMiddleware(_BrokenWriter())  # type: ignore[arg-type]
+
+    for _ in range(50):
+        await _call(middleware)
+
+    reported = capsys.readouterr().err.count("cannot write the audit log")
+    assert 0 < reported < 10

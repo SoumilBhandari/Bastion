@@ -112,7 +112,16 @@ class AuditWriter:
         if self._max_bytes is None or self._size < self._max_bytes:
             return
         self.close()
-        _rotate(self._path, self._keep)
+        try:
+            _rotate(self._path, self._keep)
+        except OSError:
+            # Renaming a file another process has open fails on Windows, and a
+            # reader polling the log is exactly that. The record itself is
+            # already safely written; growing past the size limit until the
+            # next attempt is a far better outcome than failing the call that
+            # happened to be the one that tripped the threshold.
+            self._open()
+            return
         self._size = 0
         # Recreate the active log straight away rather than on the next call, so
         # readers following the path never see it vanish between two records.
