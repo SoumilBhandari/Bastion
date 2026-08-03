@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from bastion import __version__
 from bastion.audit import iter_records, read_records, rotated_paths, tail_records, verify_records
 from bastion.config import BastionConfig, ConfigError, find_config, load_config
+from bastion.console import build as build_console
+from bastion.console import marks_for
 from bastion.dashboard import new_token, run_dashboard
 from bastion.gateway import build_gateway
 from bastion.gateway.app import build_mcp_config
@@ -160,7 +161,8 @@ def explain(
 
     engine = PolicyEngine(cfg.policy, cost=cfg.cost)
     result = engine.explain(tool, arguments)
-    console = Console()
+    console = build_console()
+    marks = marks_for()
 
     verdict = "[green]ALLOWED[/green]" if result.allowed else "[red]DENIED[/red]"
     console.print(f"{verdict}  [bold]{tool}[/bold]")
@@ -172,9 +174,9 @@ def explain(
     table.add_column("Detail", overflow="fold")
     for step in result.steps:
         if step.skipped:
-            mark = "[dim]-[/dim]"
+            mark = f"[dim]{marks.skip}[/dim]"
         else:
-            mark = "[green]✓[/green]" if step.allowed else "[red]✗[/red]"
+            mark = f"[green]{marks.ok}[/green]" if step.allowed else f"[red]{marks.bad}[/red]"
         table.add_row(mark, step.layer, f"[dim]{step.detail}[/dim]")
     console.print(table)
 
@@ -193,20 +195,21 @@ def explain(
 def doctor(config: ConfigOption = None) -> None:
     """Check the configuration, the upstreams, and the audit log for problems."""
     cfg = _load(config)
-    console = Console()
+    console = build_console()
+    marks = marks_for()
     problems = 0
 
     console.print(f"[bold]config[/bold]  {find_config(config)}")
-    console.print(f"  [green]✓[/green] valid — {len(cfg.upstreams)} upstream(s)")
+    console.print(f"  [green]{marks.ok}[/green] valid — {len(cfg.upstreams)} upstream(s)")
 
     console.print("\n[bold]upstreams[/bold]")
     probes = asyncio.run(_probe_upstreams(cfg))
     for probe in probes:
         if probe.reachable:
-            console.print(f"  [green]✓[/green] {probe.name} — {probe.detail}")
+            console.print(f"  [green]{marks.ok}[/green] {probe.name} — {probe.detail}")
         else:
             problems += 1
-            console.print(f"  [red]✗[/red] {probe.name} — {probe.detail}")
+            console.print(f"  [red]{marks.bad}[/red] {probe.name} — {probe.detail}")
 
     advertised = sorted({tool for probe in probes for tool in probe.tools})
     if advertised:
@@ -214,31 +217,31 @@ def doctor(config: ConfigOption = None) -> None:
         idle = _rules_matching_nothing(cfg, advertised)
         if not idle:
             console.print(
-                f"  [green]✓[/green] every rule matches at least one of "
+                f"  [green]{marks.ok}[/green] every rule matches at least one of "
                 f"{len(advertised)} advertised tools"
             )
         for note in idle:
             problems += 1
-            console.print(f"  [red]✗[/red] {note}")
+            console.print(f"  [red]{marks.bad}[/red] {note}")
 
     console.print("\n[bold]audit log[/bold]")
     if not cfg.audit.enabled:
         console.print("  [yellow]![/yellow] disabled — nothing your agent does is recorded")
     elif not cfg.audit.path.exists():
-        console.print(f"  [dim]-[/dim] {cfg.audit.path} does not exist yet")
+        console.print(f"  [dim]{marks.skip}[/dim] {cfg.audit.path} does not exist yet")
     else:
         report = verify_records(read_records(cfg.audit.path))
         if not report.ok:
             problems += 1
-            console.print(f"  [red]✗[/red] chain broken at {report.breaks[0]}")
+            console.print(f"  [red]{marks.bad}[/red] chain broken at {report.breaks[0]}")
         elif not report.starts_at_genesis and not rotated_paths(cfg.audit.path):
             problems += 1
             console.print(
-                "  [red]✗[/red] the chain does not start at its beginning and nothing "
+                f"  [red]{marks.bad}[/red] the chain does not start at its beginning and nothing "
                 "was rotated — records were removed from the front of the log"
             )
         else:
-            console.print(f"  [green]✓[/green] {report.checked} records, chain intact")
+            console.print(f"  [green]{marks.ok}[/green] {report.checked} records, chain intact")
             if report.unchained:
                 console.print(
                     f"  [yellow]![/yellow] {report.unchained} record(s) carry no hash and "
@@ -248,7 +251,7 @@ def doctor(config: ConfigOption = None) -> None:
     console.print("\n[bold]advice[/bold]")
     advice = _review_settings(cfg)
     if not advice:
-        console.print("  [green]✓[/green] nothing to flag")
+        console.print(f"  [green]{marks.ok}[/green] nothing to flag")
     for note in advice:
         console.print(f"  [yellow]![/yellow] {note}")
 
@@ -394,7 +397,7 @@ def logs(
 def tail(config: ConfigOption = None) -> None:
     """Follow the audit log, printing new records as they're recorded (Ctrl+C to exit)."""
     cfg = _load(config)
-    console = Console()
+    console = build_console()
     console.print(f"[dim]tailing {cfg.audit.path} (Ctrl+C to exit)[/dim]")
     try:
         for record in tail_records(cfg.audit.path):
@@ -459,7 +462,7 @@ def pin(
     compares that against the pin file. Without --approve this only reports.
     """
     cfg = _load(config)
-    console = Console()
+    console = build_console()
     store = PinStore(cfg.policy.pinning.path)
 
     try:
@@ -548,7 +551,7 @@ def verify(
     # someone covering their tracks would make.
     unexplained_start = not report.starts_at_genesis and not rotated_paths(path)
     failed = not report.ok or unexplained_start
-    console = Console(stderr=failed)
+    console = build_console(stderr=failed)
 
     if not report.ok:
         console.print(f"[red]FAILED[/red] — the audit log at {path} does not verify:")

@@ -18,7 +18,10 @@ def iter_records(path: Path) -> Iterator[dict[str, Any]]:
     """
     if not path.exists():
         return
-    with path.open("r", encoding="utf-8") as handle:
+    # newline="" leaves line endings alone, so a log written by an older
+    # Windows build (CRLF) reads back the same as one written anywhere else;
+    # the strip below removes the carriage return either way.
+    with path.open("r", encoding="utf-8", newline="") as handle:
         for raw in handle:
             line = raw.strip()
             if not line:
@@ -75,7 +78,10 @@ class IncrementalLog:
             return
 
         try:
-            with self._path.open("r", encoding="utf-8") as handle:
+            # newline="" keeps the offsets this class tracks comparable with the
+            # byte size from stat(): with newline translation on, what is read
+            # and what is on disk are not the same length.
+            with self._path.open("r", encoding="utf-8", newline="") as handle:
                 handle.seek(self._position)
                 chunk = handle.read()
                 self._position = handle.tell()
@@ -133,7 +139,7 @@ def tail_records(
             if path.stat().st_size < position:
                 position = 0
                 buffer = ""
-            with path.open("r", encoding="utf-8") as handle:
+            with path.open("r", encoding="utf-8", newline="") as handle:
                 handle.seek(position)
                 chunk = handle.read()
                 position = handle.tell()

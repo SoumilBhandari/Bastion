@@ -102,12 +102,16 @@ def test_load_config_anchors_relative_paths_to_the_config_file(tmp_path: Path) -
 
 
 def test_load_config_leaves_absolute_paths_alone(tmp_path: Path) -> None:
+    # Derived from tmp_path so it is genuinely absolute on Windows too: a
+    # POSIX-looking "/var/log/x" has no drive letter, so Windows treats it as
+    # rooted-but-relative and anchoring correctly gives it the config's drive.
+    elsewhere = tmp_path.parent / "bastion-elsewhere" / "audit.jsonl"
     config_file = tmp_path / "bastion.yaml"
     config_file.write_text(
-        "upstreams:\n  files:\n    command: npx\naudit:\n  path: /var/log/bastion.jsonl\n",
+        f"upstreams:\n  files:\n    command: npx\naudit:\n  path: {elsewhere.as_posix()}\n",
         encoding="utf-8",
     )
-    assert load_config(config_file).audit.path == Path("/var/log/bastion.jsonl")
+    assert load_config(config_file).audit.path == elsewhere
 
 
 def test_load_config_keeps_a_disabled_budget_checkpoint_disabled(tmp_path: Path) -> None:

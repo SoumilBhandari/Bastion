@@ -115,9 +115,10 @@ produces one JSON record per line:
 | `kind` | `tool` / `resource` / `prompt` / `pin` |
 | `tool` | the tool name, resource URI, or prompt name |
 | `arguments` | after redaction; `null` when `log_arguments` is off |
-| `outcome` | `ok` / `error` / `denied` |
+| `outcome` | `ok` / `error` / `denied` / `cancelled` |
 | `duration_ms` | |
 | `error` | the reason, on non-`ok` outcomes |
+| | `cancelled` means the client went away or aborted the request before it finished |
 | `cost` | what the call was charged; `null` if it never ran |
 | `flags` | response-guard findings, e.g. `injection:instruction-override` |
 | `prev`, `hash` | the hash chain, when `hash_chain` is on |

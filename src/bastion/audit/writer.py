@@ -100,7 +100,12 @@ class AuditWriter:
 
     def _open(self) -> IO[str]:
         if self._handle is None:
-            self._handle = self._path.open("a", encoding="utf-8")
+            # newline="\n" so Windows does not translate to CRLF. Two reasons:
+            # the size accounting below counts the bytes it *wrote*, and would
+            # undercount by one per record against what actually lands on disk;
+            # and an audit log is a machine-readable artifact whose bytes get
+            # hashed and compared, so it should be identical on every platform.
+            self._handle = self._path.open("a", encoding="utf-8", newline="\n")
         return self._handle
 
     def _maybe_rotate(self) -> None:

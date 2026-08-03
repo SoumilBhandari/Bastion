@@ -10,6 +10,8 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from bastion.console import build as build_console
+
 _OUTCOME_STYLES = {
     "ok": "[green]ok[/green]",
     "denied": "[yellow]denied[/yellow]",
@@ -45,7 +47,7 @@ def render_records_table(
     console: Console | None = None,
 ) -> None:
     """Pretty-print a list of audit records as a table."""
-    console = console or Console()
+    console = console or build_console()
     if not records:
         console.print("[dim]no audit records[/dim]")
         return
@@ -107,7 +109,7 @@ def render_stats(
     top: int = 5,
 ) -> None:
     """Print a one-shot summary of the audit log: totals, outcomes, top tools."""
-    console = console or Console()
+    console = console or build_console()
     total = len(records)
     if total == 0:
         console.print("[dim]no audit records[/dim]")
