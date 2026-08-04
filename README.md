@@ -8,7 +8,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/bastion-mcp?color=e3b341&labelColor=1f2328)](https://pypi.org/project/bastion-mcp/)
 [![CI](https://img.shields.io/github/actions/workflow/status/SoumilBhandari/Bastion/ci.yml?branch=dev&labelColor=1f2328)](https://github.com/SoumilBhandari/Bastion/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-93%25-3fb950?labelColor=1f2328)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-94%25-3fb950?labelColor=1f2328)](#tests)
 [![Python](https://img.shields.io/pypi/pyversions/bastion-mcp?labelColor=1f2328)](https://pypi.org/project/bastion-mcp/)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue?labelColor=1f2328)](LICENSE)
 
@@ -373,7 +373,7 @@ relying on any of this somewhere hostile.
 
 ```bash
 pip install -e ".[dev]"
-pytest              # 450 tests, 93% coverage
+pytest              # 518 tests, 94% coverage
 ruff check . && mypy
 ```
 
