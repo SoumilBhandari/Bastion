@@ -549,3 +549,47 @@ def test_doctor_accepts_a_spend_cap_priced_per_tool(tmp_path: Path) -> None:
     result = runner.invoke(app, ["doctor", "--config", str(config)])
 
     assert "can never be reached" not in _flat(result.output)
+
+
+# ------------- bad input at the command line -------------
+
+
+def test_init_creates_the_directory_it_was_asked_to_write_into(tmp_path: Path) -> None:
+    """It used to raise FileNotFoundError and print a traceback."""
+    target = tmp_path / "nested" / "deeper" / "bastion.yaml"
+    result = runner.invoke(app, ["init", "--path", str(target)])
+
+    assert result.exit_code == 0
+    assert target.is_file()
+    assert "Traceback" not in result.output
+
+
+def test_init_reports_a_path_it_cannot_write(tmp_path: Path) -> None:
+    blocker = tmp_path / "a-file"
+    blocker.write_text("not a directory", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", "--path", str(blocker / "bastion.yaml")])
+
+    assert result.exit_code == 1
+    assert "cannot write" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_a_config_path_that_is_a_directory_says_so(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["validate", "--config", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "is a directory" in _flat(result.output)
+
+
+def test_a_config_path_that_is_not_a_regular_file_says_so(tmp_path: Path) -> None:
+    from bastion.config.loader import _missing
+
+    assert "not a regular file" in _missing(Path("/dev/null"))
+
+
+def test_a_genuinely_missing_config_still_says_not_found(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["validate", "--config", str(tmp_path / "absent.yaml")])
+
+    assert result.exit_code == 1
+    assert "not found" in _flat(result.output)

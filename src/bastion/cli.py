@@ -456,7 +456,15 @@ def init(
     if path.exists() and not force:
         typer.echo(f"error: {path} already exists (use --force to overwrite)", err=True)
         raise typer.Exit(code=1)
-    path.write_text(STARTER_CONFIG, encoding="utf-8")
+    try:
+        # Create the directory the caller named rather than refusing: they asked
+        # for the file to be there. Anything else — a read-only volume, a path
+        # component that is a file — is reported, not raised as a traceback.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(STARTER_CONFIG, encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"error: cannot write {path}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(f"wrote {path}")
 
 

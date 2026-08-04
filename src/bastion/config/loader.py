@@ -19,6 +19,19 @@ class ConfigError(Exception):
     """Raised when the configuration cannot be located, parsed, or validated."""
 
 
+def _missing(path: Path) -> str:
+    """Say why a config path cannot be used, rather than always "not found".
+
+    A directory, a device node, or a broken symlink all exist; being told they
+    are missing sends you looking for a typo that is not there.
+    """
+    if path.is_dir():
+        return f"config path is a directory, not a file: {path}"
+    if path.exists():
+        return f"config path is not a regular file: {path}"
+    return f"config file not found: {path}"
+
+
 def find_config(explicit: Path | None = None) -> Path:
     """Locate the config file.
 
@@ -29,14 +42,14 @@ def find_config(explicit: Path | None = None) -> Path:
     if explicit is not None:
         if explicit.is_file():
             return explicit
-        raise ConfigError(f"config file not found: {explicit}")
+        raise ConfigError(_missing(explicit))
 
     env_value = os.environ.get(CONFIG_ENV_VAR)
     if env_value:
         env_path = Path(env_value)
         if env_path.is_file():
             return env_path
-        raise ConfigError(f"config file not found: {env_path} (from ${CONFIG_ENV_VAR})")
+        raise ConfigError(f"{_missing(env_path)} (from ${CONFIG_ENV_VAR})")
 
     default = Path.cwd() / DEFAULT_CONFIG_NAME
     if default.is_file():
