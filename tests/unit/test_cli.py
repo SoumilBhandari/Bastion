@@ -1,6 +1,8 @@
 import json
+import os
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from bastion import __version__
@@ -582,10 +584,24 @@ def test_a_config_path_that_is_a_directory_says_so(tmp_path: Path) -> None:
     assert "is a directory" in _flat(result.output)
 
 
-def test_a_config_path_that_is_not_a_regular_file_says_so(tmp_path: Path) -> None:
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no /dev/null path on the filesystem")
+def test_a_config_path_that_is_not_a_regular_file_says_so() -> None:
+    """A device node exists but cannot be read as a config."""
     from bastion.config.loader import _missing
 
     assert "not a regular file" in _missing(Path("/dev/null"))
+
+
+def test_a_config_path_that_does_not_exist_says_not_found(tmp_path: Path) -> None:
+    from bastion.config.loader import _missing
+
+    assert "not found" in _missing(tmp_path / "absent.yaml")
+
+
+def test_a_config_path_that_is_a_directory_is_named_as_one(tmp_path: Path) -> None:
+    from bastion.config.loader import _missing
+
+    assert "is a directory" in _missing(tmp_path)
 
 
 def test_a_genuinely_missing_config_still_says_not_found(tmp_path: Path) -> None:
