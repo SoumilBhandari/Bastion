@@ -6,6 +6,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — robustness pass
+
+A second round of testing, prompted by a Windows-only CI failure, against
+platforms, corrupt inputs and hostile values. Each of these was reproduced
+before being fixed.
+
+- **`bastion doctor` and `bastion explain` crashed on Windows** whenever their
+  output was piped, redirected or captured — which is always, in CI. They print
+  `✓`, and cp1252 has no representation for it, so they died with
+  `UnicodeEncodeError` partway through. Glyphs are now chosen against what the
+  stream can encode, and the stream degrades rather than raising. Reproducible
+  anywhere with `PYTHONIOENCODING=cp1252`.
+- **An audit-write failure turned a completed call into a reported failure.**
+  The write runs in a `finally`, so a full disk replaced whatever the call was
+  about to return — after the side effect had already happened. An agent told a
+  call failed retries it. Failures now leave the outcome alone and are reported
+  on stderr.
+- **A tool called with `1e999` wrote bare `Infinity`** into the log, which is
+  not JSON and permanently broke the dashboard API.
+- **One byte of invalid UTF-8 took down `logs`, `stats`, `verify`, `doctor` and
+  the dashboard**, contradicting the reader's own promise of tolerance.
+- **The dashboard could not see tampering in records it had already read**, and
+  re-read the whole log on every 1.5-second poll. Reading is incremental now;
+  verification re-reads everything on a five-second throttle.
+- **An ambiguous permission rule failed open.** Two equally specific rules that
+  disagreed were resolved by which was written first, so a config that both
+  allowed and denied the same pattern allowed the call. Ties now resolve to
+  `deny`, and a config that contradicts itself outright is rejected.
+- **A self-referential YAML alias** exhausted the stack instead of being
+  reported as a malformed config.
+- **A budget checkpoint claiming negative spend** was restored as-is, handing
+  back budget that had been spent.
+- **`bastion init` into a new directory** printed a traceback; a config path
+  that was a directory or a device node was reported as "not found".
+- The audit log is written with fixed line endings, so its bytes are identical
+  on every platform and its own size accounting is right.
+
+### Changed
+
+- `bastion doctor` now also fails on a permission, guard or response-guard rule
+  that matches none of the tools the upstreams actually advertise, and flags a
+  `max_cost` budget that can never be reached because every call costs zero.
+- Guards: the reference and examples now steer toward `$..name` over `$.name`,
+  because the top-level form silently protects nothing when a tool nests its
+  arguments.
+
 ### Added
 
 - **Tamper-evident audit log.** Each record carries the hash of the record
