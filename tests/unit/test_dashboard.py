@@ -1,6 +1,7 @@
 """Unit tests for the audit-log web dashboard."""
 
 import json
+import re
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -371,3 +372,47 @@ def test_a_new_record_is_visible_before_the_next_verification(tmp_path: Path) ->
     data = client.get("/api/audit").json()  # same instant, no re-verification
     assert data["summary"]["total"] == 3
     assert data["records"][0]["tool"] == "just_now"
+
+
+# ------------- audit fields are attacker-influenced -------------
+
+XSS = "<img src=x onerror=\"document.title='PWNED'\">"
+
+
+def test_every_field_the_page_renders_is_escaped() -> None:
+    """Tool names, errors and flags come from upstreams, so the page must escape them.
+
+    Checked against a live browser too; this pins the contract so an edit to
+    index.html cannot quietly drop an esc() call.
+    """
+    html = (Path(__file__).parents[2] / "src/bastion/dashboard/index.html").read_text(
+        encoding="utf-8"
+    )
+    rendered = html[html.index("function renderRows") : html.index("async function load")]
+
+    interpolations = re.findall(r"\$\{([^}]+)\}", rendered)
+    from_record = [expr for expr in interpolations if re.search(r"\br\.", expr)]
+    assert from_record, "expected the row template to interpolate record fields"
+    unescaped = [expr for expr in from_record if "esc(" not in expr]
+    assert not unescaped, f"record fields rendered without esc(): {unescaped}"
+
+
+def test_the_escape_helper_covers_the_html_metacharacters() -> None:
+    html = (Path(__file__).parents[2] / "src/bastion/dashboard/index.html").read_text(
+        encoding="utf-8"
+    )
+    body = html[html.index("function esc(s)") :][:300]
+    for char in ("&", "<", ">", '"'):
+        assert f'"{char}"' in body or f"'{char}'" in body, f"esc() does not handle {char!r}"
+
+
+def test_a_hostile_record_is_served_as_data_not_markup(tmp_path: Path) -> None:
+    """The API must not do any escaping of its own — it returns JSON, not HTML."""
+    log = tmp_path / "audit.jsonl"
+    with AuditWriter(log) as writer:
+        writer.write(AuditRecord(tool=XSS, outcome="error", error=XSS, flags=[XSS]))
+
+    record = _client(log).get("/api/audit").json()["records"][0]
+
+    assert record["tool"] == XSS  # delivered verbatim; the page is what escapes it
+    assert record["error"] == XSS
