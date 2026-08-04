@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bastion.config.schema import ResponseConfig, ResponseGuardRule
+from bastion.limits import MAX_STRUCTURE_DEPTH, TOO_DEEP
 from bastion.policy.injection import find_injection
 from bastion.policy.secrets import find_secrets, redact_text
 
@@ -134,26 +135,30 @@ class ResponseInspector:
         return " ".join(_leaf_strings(structured))
 
 
-def _map_strings(value: Any, transform: Callable[[str], str]) -> Any:
+def _map_strings(value: Any, transform: Callable[[str], str], depth: int = 0) -> Any:
     """Apply ``transform`` to every string in a nested structure."""
+    if depth > MAX_STRUCTURE_DEPTH:
+        return TOO_DEEP
     if isinstance(value, str):
         return transform(value)
     if isinstance(value, dict):
-        return {key: _map_strings(item, transform) for key, item in value.items()}
+        return {key: _map_strings(item, transform, depth + 1) for key, item in value.items()}
     if isinstance(value, list):
-        return [_map_strings(item, transform) for item in value]
+        return [_map_strings(item, transform, depth + 1) for item in value]
     if isinstance(value, tuple):
-        return tuple(_map_strings(item, transform) for item in value)
+        return tuple(_map_strings(item, transform, depth + 1) for item in value)
     return value
 
 
-def _leaf_strings(value: Any) -> list[str]:
+def _leaf_strings(value: Any, depth: int = 0) -> list[str]:
+    if depth > MAX_STRUCTURE_DEPTH:
+        return [TOO_DEEP]
     if isinstance(value, str):
         return [value]
     if isinstance(value, dict):
-        return [part for item in value.values() for part in _leaf_strings(item)]
+        return [part for item in value.values() for part in _leaf_strings(item, depth + 1)]
     if isinstance(value, (list, tuple)):
-        return [part for item in value for part in _leaf_strings(item)]
+        return [part for item in value for part in _leaf_strings(item, depth + 1)]
     if value is None:
         return []
     return [str(value)]

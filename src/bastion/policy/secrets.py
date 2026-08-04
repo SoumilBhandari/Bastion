@@ -22,6 +22,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from bastion.limits import MAX_STRUCTURE_DEPTH, TOO_DEEP
+
 REDACTED = "***"
 
 SCAN_LIMIT = 1_000_000
@@ -107,24 +109,26 @@ def redact_text(text: str) -> str:
     return head + tail
 
 
-def redact_structure(value: Any) -> Any:
+def redact_structure(value: Any, depth: int = 0) -> Any:
     """Return a copy of ``value`` with credentials redacted throughout.
 
     Recurses into mappings and sequences. A mapping entry whose *name* looks
     sensitive has its whole value replaced; everything else is redacted by
     content.
     """
+    if depth > MAX_STRUCTURE_DEPTH:
+        return TOO_DEEP
     if isinstance(value, str):
         return redact_text(value)
     if isinstance(value, dict):
         return {
-            key: (REDACTED if _is_sensitive_key(key) else redact_structure(item))
+            key: (REDACTED if _is_sensitive_key(key) else redact_structure(item, depth + 1))
             for key, item in value.items()
         }
     if isinstance(value, list):
-        return [redact_structure(item) for item in value]
+        return [redact_structure(item, depth + 1) for item in value]
     if isinstance(value, tuple):
-        return tuple(redact_structure(item) for item in value)
+        return tuple(redact_structure(item, depth + 1) for item in value)
     return value
 
 

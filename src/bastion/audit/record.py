@@ -9,8 +9,10 @@ from datetime import UTC, datetime
 from math import isfinite
 from typing import Any
 
+from bastion.limits import MAX_STRUCTURE_DEPTH, TOO_DEEP
 
-def json_safe(value: Any) -> Any:
+
+def json_safe(value: Any, depth: int = 0) -> Any:
     """Replace values JSON cannot represent, recursively.
 
     ``json.dumps`` happily emits bare ``Infinity`` and ``NaN`` — Python accepts
@@ -23,14 +25,16 @@ def json_safe(value: Any) -> Any:
     called with. Doing this before the hash is computed keeps the written line
     and the hashed content identical.
     """
+    if depth > MAX_STRUCTURE_DEPTH:
+        return TOO_DEEP
     if isinstance(value, float) and not isfinite(value):
         return str(value)  # "inf", "-inf", "nan"
     if isinstance(value, dict):
-        return {key: json_safe(item) for key, item in value.items()}
+        return {key: json_safe(item, depth + 1) for key, item in value.items()}
     if isinstance(value, list):
-        return [json_safe(item) for item in value]
+        return [json_safe(item, depth + 1) for item in value]
     if isinstance(value, tuple):
-        return tuple(json_safe(item) for item in value)
+        return tuple(json_safe(item, depth + 1) for item in value)
     return value
 
 

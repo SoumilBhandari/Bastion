@@ -77,6 +77,19 @@ Do not treat a clean scan as evidence that a result is safe. Its value is
 raising the cost of the easy attacks and making the suspicious ones visible in
 the log.
 
+## Walking stops at a nesting limit
+
+Arguments come from the agent and results come from upstreams, so both are
+shaped by something other than you. A value nested a few thousand levels deep —
+which an upstream can simply return — exhausted the interpreter stack in every
+recursive walk Bastion does over them: redaction, serialisation, and the
+flattening that feeds the scanners.
+
+Walks now stop at 100 levels and replace anything deeper with a conspicuous
+marker, so nothing slips through a walk that was supposed to inspect it. Real
+arguments and results are nowhere near that deep; if you see the marker in an
+audit log, that subtree was never examined.
+
 ## Scanning stops at a size limit
 
 Both scanners examine at most `SCAN_LIMIT` characters (1 MB) of a value, because
